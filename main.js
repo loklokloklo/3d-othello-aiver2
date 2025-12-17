@@ -359,6 +359,7 @@ function handlePointerDownOnce(event) {
         if (!hasAnyLegalMove(otherPlayer) ) {
             checkGameEnd();
         } else {
+
             showPassPopup();
         }
     }}
@@ -1304,53 +1305,73 @@ function isGameOverInBoard(boardState) {
 }
 
 // ミニマックス探索（αβ枝刈り、深さ3）
-function minimaxV9(boardState, depth, alpha, beta, maximizingPlayer, originalPlayer) {
+function minimaxV9(boardState, depth, alpha, beta, currentPlayer, originalPlayer) {
   // 終端条件
   if (depth === 0 || isGameOverInBoard(boardState)) {
     return evaluateStateV9(boardState, originalPlayer);
   }
-  
-  const currentPlayer = getCurrentPlayerFromBoard(boardState);
+
   const legalMoves = generateLegalMoves(currentPlayer, boardState);
-  
-  // パスの処理
+  const nextPlayer = currentPlayer === 'black' ? 'white' : 'black';
+
+  // パス処理
   if (legalMoves.length === 0) {
-    const nextPlayer = currentPlayer === 'black' ? 'white' : 'black';
-    const boardCopy = copyBoard(boardState);
-    return minimaxV9(boardCopy, depth - 1, alpha, beta, maximizingPlayer, originalPlayer);
+    return minimaxV9(
+      boardState,
+      depth - 1,
+      alpha,
+      beta,
+      nextPlayer,
+      originalPlayer
+    );
   }
-  
-  if (currentPlayer === maximizingPlayer) {
-    // 最大化
+
+  const isMaximizing = currentPlayer === originalPlayer;
+
+  if (isMaximizing) {
     let maxEval = -Infinity;
     for (const [x, y, z] of legalMoves) {
       const boardCopy = copyBoard(boardState);
       simulateMove(boardCopy, x, y, z, currentPlayer);
-      const evaluation = minimaxV9(boardCopy, depth - 1, alpha, beta, maximizingPlayer, originalPlayer);
-      maxEval = Math.max(maxEval, evaluation);
-      alpha = Math.max(alpha, evaluation);
+
+      const evalScore = minimaxV9(
+        boardCopy,
+        depth - 1,
+        alpha,
+        beta,
+        nextPlayer,
+        originalPlayer
+      );
+
+      maxEval = Math.max(maxEval, evalScore);
+      alpha = Math.max(alpha, evalScore);
       if (beta <= alpha) break; // βカット
     }
     return maxEval;
   } else {
-    // 最小化
     let minEval = Infinity;
     for (const [x, y, z] of legalMoves) {
       const boardCopy = copyBoard(boardState);
       simulateMove(boardCopy, x, y, z, currentPlayer);
-      const evaluation = minimaxV9(boardCopy, depth - 1, alpha, beta, maximizingPlayer, originalPlayer);
-      minEval = Math.min(minEval, evaluation);
-      beta = Math.min(beta, evaluation);
+
+      const evalScore = minimaxV9(
+        boardCopy,
+        depth - 1,
+        alpha,
+        beta,
+        nextPlayer,
+        originalPlayer
+      );
+
+      minEval = Math.min(minEval, evalScore);
+      beta = Math.min(beta, evalScore);
       if (beta <= alpha) break; // αカット
     }
     return minEval;
   }
 }
 
-// 現在の手番を判定（簡易版：グローバル変数currentTurnを使用）
-function getCurrentPlayerFromBoard(boardState) {
-  return currentTurn;
-}
+
 
 // 盤面のディープコピー
 function copyBoard(boardState) {
@@ -1361,33 +1382,35 @@ function copyBoard(boardState) {
 function selectMoveV9(boardState, player) {
   const legalMoves = generateLegalMoves(player, boardState);
   if (legalMoves.length === 0) return null;
-  
-  const movesWithScore = [];
-  
+
+  let bestScore = -Infinity;
+  let bestMoves = [];
+
   for (const [x, y, z] of legalMoves) {
     const boardCopy = copyBoard(boardState);
     simulateMove(boardCopy, x, y, z, player);
-    
+
     const score = minimaxV9(
       boardCopy,
       EVAL_PARAMS.searchDepth - 1,
       -Infinity,
       Infinity,
-      player,
+      player === 'black' ? 'white' : 'black',
       player
     );
-    
-    movesWithScore.push({ move: [x, y, z], score });
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestMoves = [[x, y, z]];
+    } else if (score === bestScore) {
+      bestMoves.push([x, y, z]);
+    }
   }
-  
-  // 最高スコアの手を選択
-  const maxScore = Math.max(...movesWithScore.map(m => m.score));
-  const bestMoves = movesWithScore.filter(m => m.score === maxScore);
-  
-  // 同点の場合はランダム選択
-  const chosen = bestMoves[Math.floor(Math.random() * bestMoves.length)];
-  return chosen.move;
+
+  // 同点はランダム
+  return bestMoves[Math.floor(Math.random() * bestMoves.length)];
 }
+
 
 function handleAITurn() {
   if (currentTurn !== aiColor) return;
@@ -1417,7 +1440,9 @@ function handleAITurn() {
     }
 
     // ② 「相手の合法手が最小になる手」を選ぶ
-    const move = chooseMoveMinOpponentLegal();
+    // ② v9 ミニマックスAIで手を選ぶ
+      const move = selectMoveV9(board, aiColor);
+
 
     if (!move) {
       // 念のための保険
