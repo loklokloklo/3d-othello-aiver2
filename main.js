@@ -1188,7 +1188,7 @@ const EVAL_PARAMS = {
   positionWeight: 0.30,
   mobilityWeight: 0.10,
   stoneWeight: 0.05,
-  searchDepth: 3
+  searchDepth: 5
 };
 
 // 位置判定関数
@@ -1475,5 +1475,6 @@ function handleAITurn() {
     checkGameEnd();
   }, 500);
 }
+
 
 
