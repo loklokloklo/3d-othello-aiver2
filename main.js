@@ -1389,86 +1389,66 @@ function selectMoveV9(boardState, player) {
   return chosen.move;
 }
 
-// generateLegalMoves を boardState を引数に取るように修正
-function generateLegalMoves(color, boardState) {
-  const legalMoves = [];
-  for (let x = 0; x < 4; x++) {
-    for (let y = 0; y < 4; y++) {
-      for (let z = 0; z < 4; z++) {
-        if (isLegalMove(boardState, x, y, z, color)) {
-          legalMoves.push([x, y, z]);
-        }
-      }
-    }
-  }
-  return legalMoves;
-}
+function handleAITurn() {
+  if (currentTurn !== aiColor) return;
 
-// ========================================
-// handleAITurn を v9版に置き換え
-// ========================================
-async function handleAITurn() {
-  if (currentTurn !== aiColor) {
-    console.log("❌ handleAITurn: 呼び出されたが currentTurn ≠ aiColor");
-    return;
-  }
-
-  console.log("🧠 v9 AIターン開始: currentTurn =", currentTurn);
+  console.log("🧠 AIターン開始:", aiColor);
   showAILoadingIndicator();
-  
-  updateStoneCountDisplay();
-  showAllLegalMoves();
 
-  setTimeout(async () => {
-    // 合法手チェック
+  setTimeout(() => {
+    // ① 合法手がなければパス
     if (!hasAnyLegalMove(aiColor)) {
-      console.log("🧾 hasAnyLegalMove => false: AIパス");
       hideAILoadingIndicator();
+      console.log("🤖 AIはパス");
+
       moveHistory.push({ player: aiColor, pass: true });
-      
+
       if (lastPlacedStone && lastPlacedColor) {
         const prevColor = lastPlacedColor === 'black' ? 0x000000 : 0xffffff;
         revertPreviousRedStone(prevColor);
       }
 
       showAIPassPopup("AIはパスしました");
+
       currentTurn = aiColor === 'black' ? 'white' : 'black';
-      updateStoneCountDisplay();
       showAllLegalMoves();
-      if (checkGameEnd()) return;
-      
-      if (currentTurn === aiColor) setTimeout(() => handleAITurn(), 800);
+      checkGameEnd();
       return;
     }
 
-    // v9 AI で手を選択
-    console.log("🤖 v9 ミニマックス探索開始...");
-    const aiMove = selectMoveV9(board, aiColor);
-    console.log("✅ v9 AIが選択した手:", aiMove);
-    
-    hideAILoadingIndicator();
-    
-    if (aiMove) {
-      performAIMoveAndContinue(aiMove);
-      PassorNot();
-    } else {
-      // フォールバック：パス処理
-      console.warn("⚠️ v9 AIが手を返さなかったためパス");
-      moveHistory.push({ player: aiColor, pass: true });
-      
-      if (lastPlacedStone && lastPlacedColor) {
-        const prevColor = lastPlacedColor === 'black' ? 0x000000 : 0xffffff;
-        revertPreviousRedStone(prevColor);
-      }
-      
-      showAIPassPopup("AIはパスしました");
+    // ② 「相手の合法手が最小になる手」を選ぶ
+    const move = chooseMoveMinOpponentLegal();
+
+    if (!move) {
+      // 念のための保険
+      hideAILoadingIndicator();
       currentTurn = aiColor === 'black' ? 'white' : 'black';
-      updateStoneCountDisplay();
       showAllLegalMoves();
-      PassorNot();
-      if (checkGameEnd()) return;
-      
-      if (currentTurn === aiColor) setTimeout(() => handleAITurn(), 800);
+      return;
     }
-  }, 0);
+
+    // ③ 着手
+    const [x, y, z] = move;
+    const color = aiColor === 'black' ? 0x000000 : 0xffffff;
+
+    createStone(x, y, z, color, true);
+    board[x][y][z] = aiColor;
+    placedStones.add(`${x},${y},${z}`);
+
+    lastPlacedStone = [x, y, z];
+    lastPlacedColor = aiColor;
+
+    moveHistory.push({ player: aiColor, move: [x, y, z] });
+
+    flipStones(x, y, z, aiColor);
+    updateStoneCountDisplay();
+
+    currentTurn = aiColor === 'black' ? 'white' : 'black';
+
+    hideAILoadingIndicator();
+    showAllLegalMoves();
+    checkGameEnd();
+  }, 500);
 }
+
+
