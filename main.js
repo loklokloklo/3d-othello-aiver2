@@ -811,7 +811,7 @@ function showAIPassPopup(message) {
 
 
 
-async function handleAITurn() {
+/*async function handleAITurn() {
   if (currentTurn !== aiColor) {
     console.log("❌ handleAITurn: 呼び出されたが currentTurn ≠ aiColor");
     return;
@@ -945,7 +945,7 @@ showAILoadingIndicator();
 
   }, 0);
   
-}
+}*/
 
 // 着手処理を分離すると見通しが良い
 function performAIMoveAndContinue(aiMove) {
@@ -1172,4 +1172,303 @@ function simulateMove(boardCopy, x, y, z, turnColor) {
       }
     }
   }
+}
+
+// ========================================
+// v9 ミニマックスAI（深さ3）
+// ========================================
+
+// BPS評価パラメータ（v9のC++版と同じ）
+const EVAL_PARAMS = {
+  corner: 0.585,
+  edge: 0.474,
+  middle: 0.452,
+  inner: 0.435,
+  positionWeight: 0.30,
+  mobilityWeight: 0.10,
+  stoneWeight: 0.05,
+  searchDepth: 3
+};
+
+// 位置判定関数
+function isCornerPosition(x, y, z) {
+  return (x === 0 || x === 3) && (y === 0 || y === 3) && (z === 0 || z === 3);
+}
+
+function isEdgePosition(x, y, z) {
+  let edgeCount = 0;
+  if (x === 0 || x === 3) edgeCount++;
+  if (y === 0 || y === 3) edgeCount++;
+  if (z === 0 || z === 3) edgeCount++;
+  return edgeCount === 2 && !isCornerPosition(x, y, z);
+}
+
+function isMiddlePosition(x, y, z) {
+  let edgeCount = 0;
+  if (x === 0 || x === 3) edgeCount++;
+  if (y === 0 || y === 3) edgeCount++;
+  if (z === 0 || z === 3) edgeCount++;
+  return edgeCount === 1;
+}
+
+// BPS位置価値を取得
+function getBPSValue(x, y, z) {
+  if (isCornerPosition(x, y, z)) return EVAL_PARAMS.corner;
+  if (isEdgePosition(x, y, z)) return EVAL_PARAMS.edge;
+  if (isMiddlePosition(x, y, z)) return EVAL_PARAMS.middle;
+  return EVAL_PARAMS.inner;
+}
+
+// 石数をカウント
+function countStonesInBoard(boardState) {
+  let black = 0, white = 0;
+  for (let x = 0; x < 4; x++) {
+    for (let y = 0; y < 4; y++) {
+      for (let z = 0; z < 4; z++) {
+        if (boardState[x][y][z] === 'black') black++;
+        if (boardState[x][y][z] === 'white') white++;
+      }
+    }
+  }
+  return { black, white };
+}
+
+// 合法手数をカウント
+function countLegalMovesForPlayer(boardState, player) {
+  let count = 0;
+  for (let x = 0; x < 4; x++) {
+    for (let y = 0; y < 4; y++) {
+      for (let z = 0; z < 4; z++) {
+        if (isLegalMove(boardState, x, y, z, player)) count++;
+      }
+    }
+  }
+  return count;
+}
+
+// v9評価関数（BPS位置価値 + モビリティ + 石数 + 終盤ボーナス）
+function evaluateStateV9(boardState, player) {
+  const opponent = player === 'black' ? 'white' : 'black';
+  
+  // 1. BPS位置価値
+  let positionScore = 0.0;
+  for (let x = 0; x < 4; x++) {
+    for (let y = 0; y < 4; y++) {
+      for (let z = 0; z < 4; z++) {
+        if (boardState[x][y][z] === player) {
+          positionScore += getBPSValue(x, y, z);
+        } else if (boardState[x][y][z] === opponent) {
+          positionScore -= getBPSValue(x, y, z);
+        }
+      }
+    }
+  }
+  positionScore *= EVAL_PARAMS.positionWeight;
+  
+  // 2. 石数評価
+  const stones = countStonesInBoard(boardState);
+  let stoneScore = 0.0;
+  if (player === 'black') {
+    stoneScore = (stones.black - stones.white) * EVAL_PARAMS.stoneWeight;
+  } else {
+    stoneScore = (stones.white - stones.black) * EVAL_PARAMS.stoneWeight;
+  }
+  
+  // 3. モビリティ評価
+  const myMoves = countLegalMovesForPlayer(boardState, player);
+  const oppMoves = countLegalMovesForPlayer(boardState, opponent);
+  
+  let mobilityScore = 0.0;
+  if (oppMoves > 0) {
+    const ratio = myMoves / oppMoves;
+    mobilityScore = (ratio - 1.0) * EVAL_PARAMS.mobilityWeight;
+  } else if (myMoves > 0) {
+    mobilityScore = 1.0 * EVAL_PARAMS.mobilityWeight;
+  }
+  
+  // 4. 終盤ボーナス（石数が50個以上の場合）
+  const totalStones = stones.black + stones.white;
+  let endgameBonus = 0.0;
+  if (totalStones >= 50) {
+    endgameBonus = stoneScore * 5.0;
+  }
+  
+  return positionScore + stoneScore + mobilityScore + endgameBonus;
+}
+
+// ゲーム終了判定
+function isGameOverInBoard(boardState) {
+  const blackHasMove = countLegalMovesForPlayer(boardState, 'black') > 0;
+  const whiteHasMove = countLegalMovesForPlayer(boardState, 'white') > 0;
+  return !blackHasMove && !whiteHasMove;
+}
+
+// ミニマックス探索（αβ枝刈り、深さ3）
+function minimaxV9(boardState, depth, alpha, beta, maximizingPlayer, originalPlayer) {
+  // 終端条件
+  if (depth === 0 || isGameOverInBoard(boardState)) {
+    return evaluateStateV9(boardState, originalPlayer);
+  }
+  
+  const currentPlayer = getCurrentPlayerFromBoard(boardState);
+  const legalMoves = generateLegalMoves(currentPlayer, boardState);
+  
+  // パスの処理
+  if (legalMoves.length === 0) {
+    const nextPlayer = currentPlayer === 'black' ? 'white' : 'black';
+    const boardCopy = copyBoard(boardState);
+    return minimaxV9(boardCopy, depth - 1, alpha, beta, maximizingPlayer, originalPlayer);
+  }
+  
+  if (currentPlayer === maximizingPlayer) {
+    // 最大化
+    let maxEval = -Infinity;
+    for (const [x, y, z] of legalMoves) {
+      const boardCopy = copyBoard(boardState);
+      simulateMove(boardCopy, x, y, z, currentPlayer);
+      const evaluation = minimaxV9(boardCopy, depth - 1, alpha, beta, maximizingPlayer, originalPlayer);
+      maxEval = Math.max(maxEval, evaluation);
+      alpha = Math.max(alpha, evaluation);
+      if (beta <= alpha) break; // βカット
+    }
+    return maxEval;
+  } else {
+    // 最小化
+    let minEval = Infinity;
+    for (const [x, y, z] of legalMoves) {
+      const boardCopy = copyBoard(boardState);
+      simulateMove(boardCopy, x, y, z, currentPlayer);
+      const evaluation = minimaxV9(boardCopy, depth - 1, alpha, beta, maximizingPlayer, originalPlayer);
+      minEval = Math.min(minEval, evaluation);
+      beta = Math.min(beta, evaluation);
+      if (beta <= alpha) break; // αカット
+    }
+    return minEval;
+  }
+}
+
+// 現在の手番を判定（簡易版：グローバル変数currentTurnを使用）
+function getCurrentPlayerFromBoard(boardState) {
+  return currentTurn;
+}
+
+// 盤面のディープコピー
+function copyBoard(boardState) {
+  return boardState.map(layer => layer.map(row => row.slice()));
+}
+
+// v9 AI の手選択
+function selectMoveV9(boardState, player) {
+  const legalMoves = generateLegalMoves(player, boardState);
+  if (legalMoves.length === 0) return null;
+  
+  const movesWithScore = [];
+  
+  for (const [x, y, z] of legalMoves) {
+    const boardCopy = copyBoard(boardState);
+    simulateMove(boardCopy, x, y, z, player);
+    
+    const score = minimaxV9(
+      boardCopy,
+      EVAL_PARAMS.searchDepth - 1,
+      -Infinity,
+      Infinity,
+      player,
+      player
+    );
+    
+    movesWithScore.push({ move: [x, y, z], score });
+  }
+  
+  // 最高スコアの手を選択
+  const maxScore = Math.max(...movesWithScore.map(m => m.score));
+  const bestMoves = movesWithScore.filter(m => m.score === maxScore);
+  
+  // 同点の場合はランダム選択
+  const chosen = bestMoves[Math.floor(Math.random() * bestMoves.length)];
+  return chosen.move;
+}
+
+// generateLegalMoves を boardState を引数に取るように修正
+function generateLegalMoves(color, boardState) {
+  const legalMoves = [];
+  for (let x = 0; x < 4; x++) {
+    for (let y = 0; y < 4; y++) {
+      for (let z = 0; z < 4; z++) {
+        if (isLegalMove(boardState, x, y, z, color)) {
+          legalMoves.push([x, y, z]);
+        }
+      }
+    }
+  }
+  return legalMoves;
+}
+
+// ========================================
+// handleAITurn を v9版に置き換え
+// ========================================
+async function handleAITurn() {
+  if (currentTurn !== aiColor) {
+    console.log("❌ handleAITurn: 呼び出されたが currentTurn ≠ aiColor");
+    return;
+  }
+
+  console.log("🧠 v9 AIターン開始: currentTurn =", currentTurn);
+  showAILoadingIndicator();
+  
+  updateStoneCountDisplay();
+  showAllLegalMoves();
+
+  setTimeout(async () => {
+    // 合法手チェック
+    if (!hasAnyLegalMove(aiColor)) {
+      console.log("🧾 hasAnyLegalMove => false: AIパス");
+      hideAILoadingIndicator();
+      moveHistory.push({ player: aiColor, pass: true });
+      
+      if (lastPlacedStone && lastPlacedColor) {
+        const prevColor = lastPlacedColor === 'black' ? 0x000000 : 0xffffff;
+        revertPreviousRedStone(prevColor);
+      }
+
+      showAIPassPopup("AIはパスしました");
+      currentTurn = aiColor === 'black' ? 'white' : 'black';
+      updateStoneCountDisplay();
+      showAllLegalMoves();
+      if (checkGameEnd()) return;
+      
+      if (currentTurn === aiColor) setTimeout(() => handleAITurn(), 800);
+      return;
+    }
+
+    // v9 AI で手を選択
+    console.log("🤖 v9 ミニマックス探索開始...");
+    const aiMove = selectMoveV9(board, aiColor);
+    console.log("✅ v9 AIが選択した手:", aiMove);
+    
+    hideAILoadingIndicator();
+    
+    if (aiMove) {
+      performAIMoveAndContinue(aiMove);
+      PassorNot();
+    } else {
+      // フォールバック：パス処理
+      console.warn("⚠️ v9 AIが手を返さなかったためパス");
+      moveHistory.push({ player: aiColor, pass: true });
+      
+      if (lastPlacedStone && lastPlacedColor) {
+        const prevColor = lastPlacedColor === 'black' ? 0x000000 : 0xffffff;
+        revertPreviousRedStone(prevColor);
+      }
+      
+      showAIPassPopup("AIはパスしました");
+      currentTurn = aiColor === 'black' ? 'white' : 'black';
+      updateStoneCountDisplay();
+      showAllLegalMoves();
+      PassorNot();
+      if (checkGameEnd()) return;
+      
+      if (currentTurn === aiColor) setTimeout(() => handleAITurn(), 800);
+    }
+  }, 0);
 }
