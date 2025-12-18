@@ -1204,21 +1204,6 @@ function isEdgePosition(x, y, z) {
   return edgeCount === 2 && !isCornerPosition(x, y, z);
 }
 
-function isMiddlePosition(x, y, z) {
-  let edgeCount = 0;
-  if (x === 0 || x === 3) edgeCount++;
-  if (y === 0 || y === 3) edgeCount++;
-  if (z === 0 || z === 3) edgeCount++;
-  return edgeCount === 1;
-}
-
-// BPS位置価値を取得
-function getBPSValue(x, y, z) {
-  if (isCornerPosition(x, y, z)) return EVAL_PARAMS.corner;
-  if (isEdgePosition(x, y, z)) return EVAL_PARAMS.edge;
-  if (isMiddlePosition(x, y, z)) return EVAL_PARAMS.middle;
-  return EVAL_PARAMS.inner;
-}
 
 // 石数をカウント
 function countStonesInBoard(boardState) {
@@ -1247,158 +1232,243 @@ function countLegalMovesForPlayer(boardState, player) {
   return count;
 }
 
-// v9評価関数（BPS位置価値 + モビリティ + 石数 + 終盤ボーナス）
-function evaluateStateV9(boardState, player) {
-  const opponent = player === 'black' ? 'white' : 'black';
+// 面の3つ目禁止ルールチェック
+function isForbiddenThirdFace(boardState, x, y, z) {
+  const faces = [
+    [0, [1, 2]], [3, [1, 2]], // x面
+    [0, [0, 2]], [3, [0, 2]], // y面
+    [0, [0, 1]], [3, [0, 1]]  // z面
+  ];
   
-  // 1. BPS位置価値
-  let positionScore = 0.0;
-  for (let x = 0; x < 4; x++) {
-    for (let y = 0; y < 4; y++) {
-      for (let z = 0; z < 4; z++) {
-        if (boardState[x][y][z] === player) {
-          positionScore += getBPSValue(x, y, z);
-        } else if (boardState[x][y][z] === opponent) {
-          positionScore -= getBPSValue(x, y, z);
+  for (let faceIdx = 0; faceIdx < 6; faceIdx++) {
+    const fixedAxis = Math.floor(faceIdx / 2);
+    const fixedValue = (faceIdx % 2 === 0) ? 0 : 3;
+    
+    let belongsToFace = false;
+    if (fixedAxis === 0 && x === fixedValue) belongsToFace = true;
+    if (fixedAxis === 1 && y === fixedValue) belongsToFace = true;
+    if (fixedAxis === 2 && z === fixedValue) belongsToFace = true;
+    
+    if (!belongsToFace) continue;
+    
+    // Corner & Edge が埋まっているか
+    let emptyCornerEdge = 0;
+    for (let i = 0; i < 4; i++) {
+      for (let j = 0; j < 4; j++) {
+        let px, py, pz;
+        if (fixedAxis === 0) { px = fixedValue; py = i; pz = j; }
+        else if (fixedAxis === 1) { px = i; py = fixedValue; pz = j; }
+        else { px = i; py = j; pz = fixedValue; }
+        
+        if ((isCornerPosition(px, py, pz) || isEdgePosition(px, py, pz)) && 
+            boardState[px][py][pz] === null) {
+          emptyCornerEdge++;
+        }
+      }
+    }
+    
+    if (emptyCornerEdge > 0) continue;
+    
+    // Face 4マスのうち何個埋まっているか
+    let filledFaces = 0;
+    for (let i = 1; i <= 2; i++) {
+      for (let j = 1; j <= 2; j++) {
+        let px, py, pz;
+        if (fixedAxis === 0) { px = fixedValue; py = i; pz = j; }
+        else if (fixedAxis === 1) { px = i; py = fixedValue; pz = j; }
+        else { px = i; py = j; pz = fixedValue; }
+        
+        if (boardState[px][py][pz] !== null) filledFaces++;
+      }
+    }
+    
+    if (filledFaces === 2) return true;
+  }
+  
+  return false;
+}
+
+// 危険なEdgeかチェック
+function isDangerousEdge(boardState, x, y, z, player) {
+  const opponent = player === 'black' ? 'white' : 'black';
+  const corners = [
+    [0,0,0],[3,0,0],[0,3,0],[0,0,3],[3,3,0],[3,0,3],[0,3,3],[3,3,3]
+  ];
+  
+  // 相手のCorner隣接Edge
+  for (const [cx, cy, cz] of corners) {
+    if (boardState[cx][cy][cz] === opponent) {
+      for (const [dx, dy, dz] of directions) {
+        const nx = cx + dx, ny = cy + dy, nz = cz + dz;
+        if (nx === x && ny === y && nz === z && isEdgePosition(x, y, z)) {
+          return true;
         }
       }
     }
   }
-  positionScore *= EVAL_PARAMS.positionWeight;
   
-  // 2. 石数評価
-  const stones = countStonesInBoard(boardState);
-  let stoneScore = 0.0;
-  if (player === 'black') {
-    stoneScore = (stones.black - stones.white) * EVAL_PARAMS.stoneWeight;
-  } else {
-    stoneScore = (stones.white - stones.black) * EVAL_PARAMS.stoneWeight;
-  }
-  
-  // 3. モビリティ評価
-  const myMoves = countLegalMovesForPlayer(boardState, player);
-  const oppMoves = countLegalMovesForPlayer(boardState, opponent);
-  
-  let mobilityScore = 0.0;
-  if (oppMoves > 0) {
-    const ratio = myMoves / oppMoves;
-    mobilityScore = (ratio - 1.0) * EVAL_PARAMS.mobilityWeight;
-  } else if (myMoves > 0) {
-    mobilityScore = 1.0 * EVAL_PARAMS.mobilityWeight;
-  }
-  
-  // 4. 終盤ボーナス（石数が50個以上の場合）
-  const totalStones = stones.black + stones.white;
-  let endgameBonus = 0.0;
-  if (totalStones >= 50) {
-    endgameBonus = stoneScore * 5.0;
-  }
-  
-  return positionScore + stoneScore + mobilityScore + endgameBonus;
+  return false;
 }
 
-// ゲーム終了判定
-function isGameOverInBoard(boardState) {
-  const blackHasMove = countLegalMovesForPlayer(boardState, 'black') > 0;
-  const whiteHasMove = countLegalMovesForPlayer(boardState, 'white') > 0;
-  return !blackHasMove && !whiteHasMove;
-}
-
-// ミニマックス探索（αβ枝刈り、深さ3）
-function minimaxV9(boardState, depth, alpha, beta, currentPlayer, originalPlayer) {
-  // 終端条件
-  if (depth === 0 || isGameOverInBoard(boardState)) {
-    return evaluateStateV9(boardState, originalPlayer);
-  }
-
-  const legalMoves = generateLegalMoves(currentPlayer, boardState);
-  const nextPlayer = currentPlayer === 'black' ? 'white' : 'black';
-
-  // パス処理
-  if (legalMoves.length === 0) {
-    return minimaxV9(
-      boardState,
-      depth - 1,
-      alpha,
-      beta,
-      nextPlayer,
-      originalPlayer
-    );
-  }
-
-  const isMaximizing = currentPlayer === originalPlayer;
-
-  if (isMaximizing) {
-    let maxEval = -Infinity;
-    for (const [x, y, z] of legalMoves) {
-      const boardCopy = copyBoard(boardState);
-      simulateMove(boardCopy, x, y, z, currentPlayer);
-
-      const evalScore = minimaxV9(
-        boardCopy,
-        depth - 1,
-        alpha,
-        beta,
-        nextPlayer,
-        originalPlayer
-      );
-
-      maxEval = Math.max(maxEval, evalScore);
-      alpha = Math.max(alpha, evalScore);
-      if (beta <= alpha) break; // βカット
+// 確定石をカウント（簡易版）
+function countStableDiscs(boardState, player) {
+  const stable = new Set();
+  const corners = [
+    [0,0,0],[3,0,0],[0,3,0],[0,0,3],[3,3,0],[3,0,3],[0,3,3],[3,3,3]
+  ];
+  
+  for (const [cx, cy, cz] of corners) {
+    if (boardState[cx][cy][cz] === player) {
+      stable.add(`${cx},${cy},${cz}`);
     }
-    return maxEval;
-  } else {
-    let minEval = Infinity;
-    for (const [x, y, z] of legalMoves) {
-      const boardCopy = copyBoard(boardState);
-      simulateMove(boardCopy, x, y, z, currentPlayer);
-
-      const evalScore = minimaxV9(
-        boardCopy,
-        depth - 1,
-        alpha,
-        beta,
-        nextPlayer,
-        originalPlayer
-      );
-
-      minEval = Math.min(minEval, evalScore);
-      beta = Math.min(beta, evalScore);
-      if (beta <= alpha) break; // αカット
-    }
-    return minEval;
   }
+  
+  // Corner隣接石を追加
+  let changed = true;
+  let iterations = 0;
+  while (changed && iterations < 20) {
+    changed = false;
+    iterations++;
+    
+    for (let x = 0; x < 4; x++) {
+      for (let y = 0; y < 4; y++) {
+        for (let z = 0; z < 4; z++) {
+          if (boardState[x][y][z] !== player) continue;
+          const key = `${x},${y},${z}`;
+          if (stable.has(key)) continue;
+          
+          for (const [dx, dy, dz] of directions) {
+            const nx = x + dx, ny = y + dy, nz = z + dz;
+            if (nx >= 0 && nx < 4 && ny >= 0 && ny < 4 && nz >= 0 && nz < 4) {
+              if (stable.has(`${nx},${ny},${nz}`)) {
+                stable.add(key);
+                changed = true;
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  
+  return stable.size;
 }
-
-
 
 // 盤面のディープコピー
 function copyBoard(boardState) {
   return boardState.map(layer => layer.map(row => row.slice()));
 }
 
-// v9 AI の手選択
-function selectMoveV9(boardState, player) {
+// v10_humanic の人間戦略AI
+function selectMoveHumanic(boardState, player) {
+  const opponent = player === 'black' ? 'white' : 'black';
   const legalMoves = generateLegalMoves(player, boardState);
+  
   if (legalMoves.length === 0) return null;
-
-  let bestScore = -Infinity;
+  
+  // 残りマス数を計算
+  let emptyCount = 0;
+  for (let x = 0; x < 4; x++) {
+    for (let y = 0; y < 4; y++) {
+      for (let z = 0; z < 4; z++) {
+        if (boardState[x][y][z] === null) emptyCount++;
+      }
+    }
+  }
+  
+  const endgameThreshold = 6;
+  const isEndgame = emptyCount <= endgameThreshold;
+  
+  // 終盤：石数重視
+  if (isEndgame) {
+    let bestMoves = [];
+    let bestScore = -1000;
+    
+    for (const [x, y, z] of legalMoves) {
+      const boardCopy = copyBoard(boardState);
+      simulateMove(boardCopy, x, y, z, player);
+      const stones = countStonesInBoard(boardCopy);
+      const score = player === 'black' ? stones.black : stones.white;
+      
+      if (score > bestScore) {
+        bestScore = score;
+        bestMoves = [[x, y, z]];
+      } else if (score === bestScore) {
+        bestMoves.push([x, y, z]);
+      }
+    }
+    return bestMoves[Math.floor(Math.random() * bestMoves.length)];
+  }
+  
+  // 面の3つ目禁止ルールで除外
+  const safeMoves = legalMoves.filter(([x, y, z]) => !isForbiddenThirdFace(boardState, x, y, z));
+  const filteredMoves = safeMoves.length > 0 ? safeMoves : legalMoves;
+  
+  // Corner最優先
+  const cornerMoves = filteredMoves.filter(([x, y, z]) => isCornerPosition(x, y, z));
+  
+  if (cornerMoves.length > 0) {
+    let bestCorners = [];
+    let minOppMoves = 1000;
+    
+    for (const [x, y, z] of cornerMoves) {
+      const boardCopy = copyBoard(boardState);
+      simulateMove(boardCopy, x, y, z, player);
+      const oppMoves = countLegalMovesForPlayer(boardCopy, opponent);
+      
+      if (oppMoves < minOppMoves) {
+        minOppMoves = oppMoves;
+        bestCorners = [[x, y, z]];
+      } else if (oppMoves === minOppMoves) {
+        bestCorners.push([x, y, z]);
+      }
+    }
+    return bestCorners[Math.floor(Math.random() * bestCorners.length)];
+  }
+  
+  // Edge判定（危険なEdge除外）
+  const safeEdges = filteredMoves.filter(([x, y, z]) => 
+    isEdgePosition(x, y, z) && !isDangerousEdge(boardState, x, y, z, player)
+  );
+  
+  if (safeEdges.length > 0) {
+    let bestEdges = [];
+    let bestScore = -1000;
+    
+    for (const [x, y, z] of safeEdges) {
+      const boardCopy = copyBoard(boardState);
+      simulateMove(boardCopy, x, y, z, player);
+      
+      const myStable = countStableDiscs(boardCopy, player);
+      const oppMoves = countLegalMovesForPlayer(boardCopy, opponent);
+      const score = myStable * 10 - oppMoves * 2;
+      
+      if (score > bestScore) {
+        bestScore = score;
+        bestEdges = [[x, y, z]];
+      } else if (score === bestScore) {
+        bestEdges.push([x, y, z]);
+      }
+    }
+    return bestEdges[Math.floor(Math.random() * bestEdges.length)];
+  }
+  
+  // Face/Core：確定石重視
   let bestMoves = [];
-
-  for (const [x, y, z] of legalMoves) {
+  let bestScore = -1000;
+  
+  for (const [x, y, z] of filteredMoves) {
     const boardCopy = copyBoard(boardState);
     simulateMove(boardCopy, x, y, z, player);
-
-    const score = minimaxV9(
-      boardCopy,
-      EVAL_PARAMS.searchDepth - 1,
-      -Infinity,
-      Infinity,
-      player === 'black' ? 'white' : 'black',
-      player
-    );
-
+    
+    const myStable = countStableDiscs(boardCopy, player);
+    const oppStable = countStableDiscs(boardCopy, opponent);
+    const myMoves = countLegalMovesForPlayer(boardCopy, player);
+    const oppMoves = countLegalMovesForPlayer(boardCopy, opponent);
+    
+    const score = (myStable - oppStable) * 100 + (myMoves - oppMoves) * 5;
+    
     if (score > bestScore) {
       bestScore = score;
       bestMoves = [[x, y, z]];
@@ -1406,8 +1476,11 @@ function selectMoveV9(boardState, player) {
       bestMoves.push([x, y, z]);
     }
   }
-
-  // 同点はランダム
+  
+  if (bestMoves.length === 0) {
+    return filteredMoves[Math.floor(Math.random() * filteredMoves.length)];
+  }
+  
   return bestMoves[Math.floor(Math.random() * bestMoves.length)];
 }
 
@@ -1441,7 +1514,7 @@ function handleAITurn() {
 
     // ② 「相手の合法手が最小になる手」を選ぶ
     // ② v9 ミニマックスAIで手を選ぶ
-      const move = selectMoveV9(board, aiColor);
+      const move = selectMoveHumanic(board, aiColor);
 
 
     if (!move) {
@@ -1475,6 +1548,7 @@ function handleAITurn() {
     checkGameEnd();
   }, 500);
 }
+
 
 
 
