@@ -355,7 +355,7 @@ function handlePointerDownOnce(event) {
     const otherPlayer = currentTurn === 'black' ? 'white' : 'black';
     console.log(currentTurn, aiColor, hasAnyLegalMove(currentTurn), hasAnyLegalMove(aiColor), hasAnyLegalMove(otherPlayer),aicannot);
     
-    if (!hasAnyLegalMove(currentTurn) && gameStarted === true) {
+    if (!hasAnyLegalMove(currentTurn) ) {
         if (!hasAnyLegalMove(otherPlayer) ) {
             checkGameEnd();
         } else {
@@ -1548,6 +1548,7 @@ function handleAITurn() {
     checkGameEnd();
   }, 500);
 }
+
 
 
 
