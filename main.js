@@ -1619,27 +1619,79 @@ function getFaceStableCandidate(boardState, faceMoves, player) {
 
 // 終盤完全読み切り（簡易版）
 function endgameSearch(boardState, player) {
-  const legalMoves = generateLegalMoves(player, boardState);
-  
-  if (legalMoves.length === 0) return null;
-  
-  let bestMove = legalMoves[0];
-  let bestScore = -1000;
-  
-  for (const move of legalMoves) {
-    const boardCopy = copyBoard(boardState);
-    simulateMove(boardCopy, move[0], move[1], move[2], player);
-    
-    const stones = countStonesInBoard(boardCopy);
-    const score = (player === 'black') ? stones.black - stones.white : stones.white - stones.black;
-    
-    if (score > bestScore) {
-      bestScore = score;
-      bestMove = move;
+  const opponent = player === 'black' ? 'white' : 'black';
+
+  function isBoardFull(board) {
+    for (let x = 0; x < 4; x++) {
+      for (let y = 0; y < 4; y++) {
+        for (let z = 0; z < 4; z++) {
+          if (board[x][y][z] === null) return false;
+        }
+      }
     }
+    return true;
   }
-  
-  return bestMove;
+
+  function finalResult(board, rootPlayer) {
+    const s = countStonesInBoard(board);
+    if (s.black > s.white) return rootPlayer === 'black' ? 1 : -1;
+    if (s.white > s.black) return rootPlayer === 'white' ? 1 : -1;
+    return 0; // draw
+  }
+
+  function solve(board, turn, root, alpha, beta) {
+    const moves = generateLegalMoves(turn, board);
+    const other = turn === 'black' ? 'white' : 'black';
+
+    // --- 終局条件 ---
+    if (isBoardFull(board)) {
+      return { score: finalResult(board, root), move: null };
+    }
+
+    const oppMoves = generateLegalMoves(other, board);
+    if (moves.length === 0 && oppMoves.length === 0) {
+      return { score: finalResult(board, root), move: null };
+    }
+
+    // --- パス ---
+    if (moves.length === 0) {
+      return solve(board, other, root, alpha, beta);
+    }
+
+    let bestMove = moves[0];
+    let bestScore = (turn === root) ? -9999 : 9999;
+
+    for (const m of moves) {
+      const b2 = copyBoard(board);
+      simulateMove(b2, m[0], m[1], m[2], turn);
+
+      const r = solve(b2, other, root, alpha, beta);
+      const score = r.score;
+
+      if (turn === root) {
+        // maximize
+        if (score > bestScore) {
+          bestScore = score;
+          bestMove = m;
+        }
+        alpha = Math.max(alpha, bestScore);
+        if (alpha >= beta) break; // αβ枝刈り
+      } else {
+        // minimize
+        if (score < bestScore) {
+          bestScore = score;
+          bestMove = m;
+        }
+        beta = Math.min(beta, bestScore);
+        if (beta <= alpha) break;
+      }
+    }
+
+    return { score: bestScore, move: bestMove };
+  }
+
+  const result = solve(boardState, player, player, -9999, 9999);
+  return result.move;
 }
 
 // v11_adhumanic メイン関数
@@ -2024,3 +2076,4 @@ if (!hasAnyLegalMove(currentTurn)) {
 checkGameEnd();
   }, 500);
 }
+
