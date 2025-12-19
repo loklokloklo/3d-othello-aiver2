@@ -1,4 +1,4 @@
-// main.js
+// main.jsだお
 import * as THREE from './libs/three.module.js';
 import { OrbitControls } from './libs/OrbitControls.js';
 import { CSS2DRenderer, CSS2DObject } from './libs/CSS2DRenderer.js';
@@ -1992,3 +1992,4 @@ function handleAITurn() {
     checkGameEnd();
   }, 500);
 }
+
