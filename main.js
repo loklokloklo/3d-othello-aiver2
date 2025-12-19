@@ -1617,6 +1617,25 @@ function getFaceStableCandidate(boardState, faceMoves, player) {
   return candidates;
 }
 
+// ★ endgameSearch 用：任意の boardState を対象に合法手を生成
+function generateLegalMovesOn(boardState, color) {
+  const legalMoves = [];
+
+  for (let x = 0; x < 4; x++) {
+    for (let y = 0; y < 4; y++) {
+      for (let z = 0; z < 4; z++) {
+        if (boardState[x][y][z] === null &&
+            isLegalMove(boardState, x, y, z, color)) {
+          legalMoves.push([x, y, z]);
+        }
+      }
+    }
+  }
+
+  return legalMoves;
+}
+
+
 // 終盤完全読み切り（簡易版）
 function endgameSearch(boardState, player) {
   const opponent = player === 'black' ? 'white' : 'black';
@@ -1640,7 +1659,7 @@ function endgameSearch(boardState, player) {
   }
 
   function solve(board, turn, root, alpha, beta) {
-    const moves = generateLegalMoves(turn, board);
+    const moves = generateLegalMovesOn(board, turn);
     const other = turn === 'black' ? 'white' : 'black';
 
     // --- 終局条件 ---
@@ -1648,7 +1667,7 @@ function endgameSearch(boardState, player) {
       return { score: finalResult(board, root), move: null };
     }
 
-    const oppMoves = generateLegalMoves(other, board);
+    const oppMoves = generateLegalMovesOn(board, other);
     if (moves.length === 0 && oppMoves.length === 0) {
       return { score: finalResult(board, root), move: null };
     }
@@ -1693,6 +1712,7 @@ function endgameSearch(boardState, player) {
   const result = solve(boardState, player, player, -9999, 9999);
   return result.move;
 }
+
 
 // v11_adhumanic メイン関数
 function selectMoveV11(boardState, player, depth = 0) {
@@ -2076,4 +2096,3 @@ if (!hasAnyLegalMove(currentTurn)) {
 checkGameEnd();
   }, 500);
 }
-
