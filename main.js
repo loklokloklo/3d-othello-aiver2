@@ -1965,10 +1965,41 @@ function handleAITurn() {
 
     currentTurn = aiColor === 'black' ? 'white' : 'black';
 
-    hideAILoadingIndicator();
-    showAllLegalMoves();
+hideAILoadingIndicator();
+showAllLegalMoves();
+
+// 🔍 プレイヤーが合法手ゼロならパス処理
+if (!hasAnyLegalMove(currentTurn)) {
+  console.log("🟡 プレイヤーに合法手なし → パス");
+
+  const other = currentTurn === 'black' ? 'white' : 'black';
+
+  // もし両方なければ終了
+  if (!hasAnyLegalMove(other)) {
+    console.log("🏁 両者合法手なし → ゲーム終了");
     checkGameEnd();
+    return;
+  }
+
+  // プレイヤーパス表示（あなたの環境に合わせて）
+  showPassPopup();
+
+  // 手番をAIに戻す
+  currentTurn = other;
+  showAllLegalMoves();
+
+  // すぐAIを動かす
+  if (currentTurn === aiColor) {
+    handleAITurn();
+  }
+
+  return;
+}
+
+checkGameEnd();
+
   }, 500);
 }
+
 
 
