@@ -1294,28 +1294,6 @@ function isForbiddenThirdFace(boardState, x, y, z) {
   return false;
 }
 
-// 危険なEdgeかチェック
-function isDangerousEdge(boardState, x, y, z, player) {
-  const opponent = player === 'black' ? 'white' : 'black';
-  const corners = [
-    [0,0,0],[3,0,0],[0,3,0],[0,0,3],[3,3,0],[3,0,3],[0,3,3],[3,3,3]
-  ];
-  
-  // 相手のCorner隣接Edge
-  for (const [cx, cy, cz] of corners) {
-    if (boardState[cx][cy][cz] === opponent) {
-      for (const [dx, dy, dz] of directions) {
-        const nx = cx + dx, ny = cy + dy, nz = cz + dz;
-        if (nx === x && ny === y && nz === z && isEdgePosition(x, y, z)) {
-          return true;
-        }
-      }
-    }
-  }
-  
-  return false;
-}
-
 // 確定石をカウント（簡易版）
 /*function countStableDiscs(boardState, player) {
   const stable = new Set();
@@ -1992,4 +1970,5 @@ function handleAITurn() {
     checkGameEnd();
   }, 500);
 }
+
 
