@@ -25,6 +25,8 @@ const moveHistory = []; // 各手の記録 ["2,3,1", "1,1,1", ...]
 let firstPlayer = 'black';
 let aiColor;
 let aicannot = false;
+let waitingPassConfirm = false;
+
 
 
 const firebaseConfig = {
@@ -569,6 +571,14 @@ function showGameResultUI(result) {
   container.style.boxShadow = '0 0 10px rgba(0, 0, 0, 0.3)';
   container.style.zIndex = '100';
 
+  // ① 終了理由の文章（あれば表示）
+  if (result.endReasonMessage) {
+    const reason = document.createElement('p');
+    reason.textContent = result.endReasonMessage;
+    reason.style.marginBottom = "10px";
+    container.appendChild(reason);
+  }
+
   const text = document.createElement('p');
   text.textContent = `勝者: ${result.result}（黒: ${result.score.black} - 白: ${result.score.white}）`;
   container.appendChild(text);
@@ -628,7 +638,8 @@ function showNewGameButton() {
 function checkGameEnd() {
   if (!gameStarted) return;
 
-  const boardFull = placedStones.size >= size * size * size;
+  const totalCells = size * size * size;
+  const boardFull = placedStones.size >= totalCells -8 ;
   const blackHasMove = hasAnyLegalMove('black');
   const whiteHasMove = hasAnyLegalMove('white');
 
@@ -652,26 +663,36 @@ function checkGameEnd() {
         return {
           turn: i + 1,
           player: entry.player,
-          x: x + 1, // 1-indexed に変換
+          x: x + 1,
           y: y + 1,
           z: z + 1
         };
       }
     });
 
-    // 最終的に送信する棋譜データ
+    // ここで終了理由を作る
+    let endReasonMessage = "";
+    if (boardFull) {
+      endReasonMessage = "全てのマスが埋まったためゲーム終了です。\n";
+    } else {
+      const empty = totalCells - 8 - placedStones.size;
+      endReasonMessage = `${empty}マス空いていますが、双方置けないためゲーム終了です。\n`;
+    }
+
     const gameData = {
-      first: firstPlayer,       // 'black' または 'white'
-      result: winner,           // 'black' / 'white' / 'draw'
-      score: result,            // { black: 〜, white: 〜 }
-      moves: formattedMoves     // 各手の履歴（1-indexed）
+      first: firstPlayer,
+      result: winner,
+      score: result,
+      moves: formattedMoves,
+      endReasonMessage // ← 追加
     };
 
     console.log('🎯 ゲーム終了:', gameData);
     gameStarted = false;
-    showGameResultUI(gameData); // UIに表示 or サーバに送信
+    showGameResultUI(gameData);
   }
 }
+
 
 function hasAnyLegalMove(player) {
   for (let x = 0; x < size; x++) {
@@ -724,24 +745,30 @@ function hidePassPopup() {
 
 document.getElementById('pass-ok-button').addEventListener('click', () => {
   hidePassPopup();
+
   moveHistory.push({ player: currentTurn, pass: true });
 
-  currentTurn = currentTurn === 'black' ? 'white' : 'black';
-  showAllLegalMoves();
-
-  if (lastPlacedStone) {
-    const prevColor = aiColor === 'black' ? 0x000000 : 0xffffff;
+  // 先に赤石を戻す（安全順）
+  if (lastPlacedStone && lastPlacedColor) {
+    const prevColor = lastPlacedColor === 'black' ? 0x000000 : 0xffffff;
     revertPreviousRedStone(prevColor);
   }
 
-  // ✅ AIが動くべきならここで判断（新方式）
-handleAITurn(); // ← これだけ残す！
+  // 手番交代
+  currentTurn = currentTurn === 'black' ? 'white' : 'black';
 
-  // 再度合法手がなければゲーム終了
+  // ⭐ OK を押したこの瞬間にだけ AI を動かす
+  if (waitingPassConfirm && currentTurn === aiColor) {
+    waitingPassConfirm = false;
+    handleAITurn();
+  }
+
+  // もし両者手なしなら終了
   if (!hasAnyLegalMove(currentTurn)) {
     checkGameEnd();
   }
 });
+
 
 function updateStoneCountDisplay() {
   const count = countStones();
@@ -1915,29 +1942,36 @@ function handleAITurn() {
 
   setTimeout(() => {
     // ① 合法手がなければパス
-    if (!hasAnyLegalMove(aiColor)) {
-      hideAILoadingIndicator();
-      console.log("🤖 AIはパス");
+// ① 合法手がなければパス
+if (!hasAnyLegalMove(aiColor)) {
+  hideAILoadingIndicator();
+  console.log("🤖 AIの合法手なし");
 
-      moveHistory.push({ player: aiColor, pass: true });
+  const other = aiColor === 'black' ? 'white' : 'black';
 
-      if (lastPlacedStone && lastPlacedColor) {
-        const prevColor = lastPlacedColor === 'black' ? 0x000000 : 0xffffff;
-        revertPreviousRedStone(prevColor);
-      }
+  // ⭐ 両者合法手なし → その場でゲーム終了
+  if (!hasAnyLegalMove(other)) {
+    console.log("🏁 両者合法手なし → ゲーム終了（AIパスポップアップなし）");
+    checkGameEnd();
+    return;
+  }
 
-      showAIPassPopup("AIはパスしました");
+  // ここに来た場合だけ「AIだけパス」
+  console.log("🤖 AIはパス");
+  moveHistory.push({ player: aiColor, pass: true });
 
-      currentTurn = aiColor === 'black' ? 'white' : 'black';
-      showAllLegalMoves();
-      checkGameEnd();
-      return;
-    }
+  if (lastPlacedStone && lastPlacedColor) {
+    const prevColor = lastPlacedColor === 'black' ? 0x000000 : 0xffffff;
+    revertPreviousRedStone(prevColor);
+  }
 
-    // ② 「相手の合法手が最小になる手」を選ぶ
-    // ② v9 ミニマックスAIで手を選ぶ
+  showAIPassPopup("AIはパスしました");
+
+  currentTurn = other;
+  showAllLegalMoves();
+  return;
+}
       const move = selectMoveV11(board, aiColor);
-
 
     if (!move) {
       // 念のための保険
@@ -1980,26 +2014,13 @@ if (!hasAnyLegalMove(currentTurn)) {
     checkGameEnd();
     return;
   }
-
+  waitingPassConfirm = true;
   // プレイヤーパス表示（あなたの環境に合わせて）
   showPassPopup();
-
   // 手番をAIに戻す
-  currentTurn = other;
-  showAllLegalMoves();
-
-  // すぐAIを動かす
-  if (currentTurn === aiColor) {
-    handleAITurn();
-  }
-
+  //currentTurn = other;
   return;
 }
-
 checkGameEnd();
-
   }, 500);
 }
-
-
-
