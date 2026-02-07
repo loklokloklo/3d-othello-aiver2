@@ -63,11 +63,12 @@ function init() {
   camera.position.set(10, 10, 10);
   camera.lookAt(0, 0, 0);
 
-  renderer = new THREE.WebGLRenderer({ antialias: true });
+    // Renderer
+    renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     document.body.appendChild(renderer.domElement);
 
+    // CSS2DRenderer（ラベル用）
     labelRenderer = new CSS2DRenderer();
     labelRenderer.setSize(window.innerWidth, window.innerHeight);
     labelRenderer.domElement.style.position = 'absolute';
@@ -75,15 +76,11 @@ function init() {
     labelRenderer.domElement.style.pointerEvents = 'none';
     document.body.appendChild(labelRenderer.domElement);
 
+    // OrbitControls
     controls = new OrbitControls(camera, renderer.domElement);
-    controls.enablePan = true;
-    controls.enableZoom = true;
-    controls.zoomSpeed = 1.0;   // ホイール感度（0.5〜1.5くらい）
-    controls.minDistance = 6;
-    controls.maxDistance = 25;
-    renderer.domElement.style.touchAction = 'none';
+    controls.target.set(3, 3, 3);
+    controls.update();
 
-  controls.target.set(3, 3, 3);
 
   const ambientLight = new THREE.AmbientLight(0xffffff, 5);
   scene.add(ambientLight);
@@ -195,13 +192,38 @@ function init() {
 }
 
 function createAxisLabel(text, x, y, z) {
-  const div = document.createElement('div');
-  div.className = 'label';
-  div.textContent = text;
-  const label = new CSS2DObject(div);
-  label.position.set(x, y, z);
-  scene.add(label);
+  const canvas = document.createElement('canvas');
+  canvas.width = 128;
+  canvas.height = 128;
+
+  const ctx = canvas.getContext('2d');
+
+  // ★ 背景は何も描かない（完全透明）
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // 黒い文字のみ
+  ctx.fillStyle = 'black';
+  ctx.font = 'bold 40px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.needsUpdate = true;
+
+  const material = new THREE.SpriteMaterial({
+    map: texture,
+    transparent: true,
+    depthTest: false // 他の物体に隠れにくくする（任意）
+  });
+
+  const sprite = new THREE.Sprite(material);
+  sprite.position.set(x, y, z);
+  sprite.scale.set(1.2, 1.2, 1.2);
+
+  scene.add(sprite);
 }
+
 
 function animate() {
   requestAnimationFrame(animate);
@@ -1569,4 +1591,3 @@ function handleAITurn() {
     checkGameEnd();
   }, 500);
 }
-
