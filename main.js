@@ -64,19 +64,25 @@ function init() {
   camera.lookAt(0, 0, 0);
 
   renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.setClearColor('#ccffd0');
-  document.body.appendChild(renderer.domElement);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    document.body.appendChild(renderer.domElement);
 
-  labelRenderer = new CSS2DRenderer();
-  labelRenderer.setSize(window.innerWidth, window.innerHeight);
-  labelRenderer.domElement.style.position = 'absolute';
-  labelRenderer.domElement.style.top = '0';
-  document.body.appendChild(labelRenderer.domElement);
+    labelRenderer = new CSS2DRenderer();
+    labelRenderer.setSize(window.innerWidth, window.innerHeight);
+    labelRenderer.domElement.style.position = 'absolute';
+    labelRenderer.domElement.style.top = '0';
+    labelRenderer.domElement.style.pointerEvents = 'none';
+    document.body.appendChild(labelRenderer.domElement);
 
-  controls = new OrbitControls(camera, labelRenderer.domElement);
-  controls.enablePan = false;
-  controls.enableZoom = false;
+    controls = new OrbitControls(camera, renderer.domElement);
+    controls.enablePan = true;
+    controls.enableZoom = true;
+    controls.zoomSpeed = 1.0;   // ホイール感度（0.5〜1.5くらい）
+    controls.minDistance = 6;
+    controls.maxDistance = 25;
+    renderer.domElement.style.touchAction = 'none';
+
   controls.target.set(3, 3, 3);
 
   const ambientLight = new THREE.AmbientLight(0xffffff, 5);
@@ -1563,3 +1569,4 @@ function handleAITurn() {
     checkGameEnd();
   }, 500);
 }
+
