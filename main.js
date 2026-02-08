@@ -1219,8 +1219,14 @@ function selectMoveCustom(boardState, player) {
   }
 
   // 2. 面の3つ目禁止で除外
+  const originalLegalMoves = [...legalMoves]; // ★ バックアップ
   legalMoves = legalMoves.filter(([x, y, z]) => !isForbiddenThirdFaceV2(boardState, x, y, z));
-  if (legalMoves.length === 0) return null;
+  
+  // ★ 全て除外された場合は元に戻す
+  if (legalMoves.length === 0) {
+    console.warn('⚠️ 面の3つ目除外で全滅 → 元の合法手を使用');
+    legalMoves = originalLegalMoves;
+  }
 
   // 3. 禁止Edgeパターンを絶対除外
   const nonForbiddenMoves = legalMoves.filter(move => !isForbiddenEdge(boardState, move, player));
@@ -1591,3 +1597,4 @@ function handleAITurn() {
     checkGameEnd();
   }, 500);
 }
+
