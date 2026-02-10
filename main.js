@@ -922,7 +922,7 @@ function generateLegalMovesOn(boardState, color) {
 // カスタム戦略AI実装
 // ========================================
 
-// 辺パターン優先度（自分視点: 0=置く場所, 1=自分, 2=相手, -=空き）
+// 辺パターン優先度（自分視点: 0=置く場所, 1=相手, 2=自分, -=空き）
 const CORNER_EDGE_PATTERNS = [
   '0221', '0112', '0121', '0212', '0211', '0122', '0222',
   '012-', '021-', '022-', '011-', '01-1', '02-1', '01-2', '02-2',
@@ -971,10 +971,11 @@ function opensCornerForOpponent(boardState, x, y, z, player) {
 }
 
 // 辺のパターン評価
+/*
 function getEdgePattern(boardState, move, player) {
   const [x, y, z] = move;
-  const mySymbol = '1';
-  const oppSymbol = '2';
+  const mySymbol = '2';
+  const oppSymbol = '1';
   const emptySymbol = '-';
 
   for (const edgeLine of ALL_EDGES) {
@@ -1029,13 +1030,144 @@ function getEdgePattern(boardState, move, player) {
   }
 
   return null;
-}
+}*/
 
-// パターンマッチング（対称性考慮）
+// ========================================
+// パターンマッチング関数（完全反転版）
+// ========================================
+
+/**
+ * パターンマッチング（対称性考慮）
+ * 完全な左右反転で比較（0を含む全体を反転）
+ */
 function matchesPattern(pattern, target) {
   if (pattern === target) return true;
-  const reversed = '0' + target.slice(1).split('').reverse().join('');
+  
+  // 完全な左右反転
+  const reversed = target.split('').reverse().join('');
   return pattern === reversed;
+}
+
+/**
+ * 辺のパターン評価（修正版）
+ */
+function getEdgePattern(boardState, move, player) {
+  const [x, y, z] = move;
+  const mySymbol = '2';
+  const oppSymbol = '1';
+  const emptySymbol = '-';
+
+  for (const edgeLine of ALL_EDGES) {
+    let foundMove = false;
+    let moveIdx = -1;
+
+    for (let i = 0; i < edgeLine.length; i++) {
+      const [ex, ey, ez] = edgeLine[i];
+      if (ex === x && ey === y && ez === z) {
+        foundMove = true;
+        moveIdx = i;
+        break;
+      }
+    }
+
+    if (!foundMove) continue;
+
+    const adjacentCorners = [];
+    
+    for (let edgeIdx = 0; edgeIdx < edgeLine.length; edgeIdx++) {
+      const [ex, ey, ez] = edgeLine[edgeIdx];
+      
+      for (const [cx, cy, cz] of CORNERS) {
+        const dist = Math.abs(cx - ex) + Math.abs(cy - ey) + Math.abs(cz - ez);
+        if (dist === 1) {
+          adjacentCorners[edgeIdx] = [cx, cy, cz];
+          break;
+        }
+      }
+    }
+
+    if (adjacentCorners.length !== 2) continue;
+
+    // ✅ 角を座標順にソート（常に小さい座標→大きい座標の順）
+    const [c0, c1] = adjacentCorners;
+    const [c0x, c0y, c0z] = c0;
+    const [c1x, c1y, c1z] = c1;
+    
+    // 座標の合計値で比較（または辞書順）
+    const c0Sum = c0x + c0y + c0z;
+    const c1Sum = c1x + c1y + c1z;
+    
+    let firstCorner, secondCorner, firstEdge, secondEdge;
+    
+    if (c0Sum < c1Sum || (c0Sum === c1Sum && (c0x < c1x || (c0x === c1x && (c0y < c1y || (c0y === c1y && c0z < c1z)))))) {
+      // c0が「小さい」角
+      firstCorner = c0;
+      secondCorner = c1;
+      if (moveIdx === 0) {
+        firstEdge = move;  // 置く場所
+        secondEdge = edgeLine[1];
+      } else {
+        firstEdge = edgeLine[0];
+        secondEdge = move;  // 置く場所
+      }
+    } else {
+      // c1が「小さい」角
+      firstCorner = c1;
+      secondCorner = c0;
+      if (moveIdx === 0) {
+        firstEdge = edgeLine[1];
+        secondEdge = move;  // 置く場所
+      } else {
+        firstEdge = move;  // 置く場所
+        secondEdge = edgeLine[0];
+      }
+    }
+    
+    // パターン生成: [firstCorner][firstEdge][secondEdge][secondCorner]
+    const pattern = [];
+    
+    // firstCorner
+    const [fc_x, fc_y, fc_z] = firstCorner;
+    const fcCell = boardState[fc_x][fc_y][fc_z];
+    if (fcCell === player) pattern.push(mySymbol);
+    else if (fcCell === null) pattern.push(emptySymbol);
+    else pattern.push(oppSymbol);
+    
+    // firstEdge
+    const [fe_x, fe_y, fe_z] = firstEdge;
+    if (fe_x === x && fe_y === y && fe_z === z) {
+      pattern.push('0');
+    } else {
+      const feCell = boardState[fe_x][fe_y][fe_z];
+      if (feCell === player) pattern.push(mySymbol);
+      else if (feCell === null) pattern.push(emptySymbol);
+      else pattern.push(oppSymbol);
+    }
+    
+    // secondEdge
+    const [se_x, se_y, se_z] = secondEdge;
+    if (se_x === x && se_y === y && se_z === z) {
+      pattern.push('0');
+    } else {
+      const seCell = boardState[se_x][se_y][se_z];
+      if (seCell === player) pattern.push(mySymbol);
+      else if (seCell === null) pattern.push(emptySymbol);
+      else pattern.push(oppSymbol);
+    }
+    
+    // secondCorner
+    const [sc_x, sc_y, sc_z] = secondCorner;
+    const scCell = boardState[sc_x][sc_y][sc_z];
+    if (scCell === player) pattern.push(mySymbol);
+    else if (scCell === null) pattern.push(emptySymbol);
+    else pattern.push(oppSymbol);
+
+    const patternStr = pattern.join('');
+    console.log(`  ✅ 最終パターン: "${patternStr}"`);
+    return patternStr;
+  }
+
+  return null;
 }
 
 // 周囲8マス占有度評価（同一面のみ）
@@ -1162,6 +1294,244 @@ function isFaceCompletion4thV2(boardState, x, y, z) {
   return false;
 }
 
+
+
+// ========================================
+// 自分専用マス優先ルール（合法手フィルタ）
+// ========================================
+
+/**
+ * 設計意図:
+ * - 相手と競合するマス（共有マス）を先に確保する
+ * - 自分しか使えない安全なマス（専用マス）を温存する
+ * - 共有マスを打つことで、将来の排他マスを相手に解放する手を排除する
+ * - 人間相手に対して安定した戦略的圧力を与える
+ */
+
+/**
+ * あるマスが「自分専用マス」かどうかを判定
+ * 条件:
+ * 1. 現在の局面で自分は置けるが相手は置けない
+ * 2. 自分がある手を打った直後（相手番）でも相手は置けない
+ * 3. その次の自分の番でも自分は置ける
+ */
+function isExclusiveMove(boardState, move, player, afterMyMove) {
+  const [x, y, z] = move;
+  const opponent = player === 'black' ? 'white' : 'black';
+  
+  // 現在の局面で自分は置けるが相手は置けない
+  if (!isLegalMove(boardState, x, y, z, player)) return false;
+  if (isLegalMove(boardState, x, y, z, opponent)) return false;
+  
+  // afterMyMove: 自分がある手を打った直後の盤面
+  // その局面（相手番）で相手は置けない
+  if (isLegalMove(afterMyMove, x, y, z, opponent)) return false;
+  
+  // その次の自分の番でも自分は置ける（相手が何を打っても）
+  // ※簡易実装: 相手の全合法手を試して確認
+  const opponentMoves = generateLegalMovesOn(afterMyMove, opponent);
+  
+  if (opponentMoves.length === 0) {
+    // 相手がパスの場合、盤面は変わらないので自分は置ける
+    return isLegalMove(afterMyMove, x, y, z, player);
+  }
+  
+  for (const oppMove of opponentMoves) {
+    const afterOppBoard = copyBoard(afterMyMove);
+    simulateMove(afterOppBoard, oppMove[0], oppMove[1], oppMove[2], opponent);
+    
+    // 相手がこの手を打った後、自分が置けなくなる場合は専用マスではない
+    if (!isLegalMove(afterOppBoard, x, y, z, player)) {
+      return false;
+    }
+  }
+  
+  return true;
+}
+
+/**
+ * 自分専用マス優先フィルタ
+ * 返り値: フィルタ後の合法手集合（空の場合は元の合法手を使用すべき）
+ */
+/**
+ * 自分専用マス優先フィルタ（修正版）
+ */
+function filterByExclusiveRule(boardState, player, candidateMoves = null) {
+  // 候補が指定されていない場合は全合法手を使用
+  const myMoves = candidateMoves || generateLegalMovesOn(boardState, player);
+  
+  if (myMoves.length <= 1) {
+    return myMoves; // 候補が1つ以下なら何もしない
+  }
+  
+  const opponent = player === 'black' ? 'white' : 'black';
+  const opponentMoves = generateLegalMovesOn(boardState, opponent);
+  
+  const sharedMoves = [];
+  const exclusiveMovesList = [];
+  
+  for (const move of myMoves) {
+    const isShared = opponentMoves.some(
+      ([ox, oy, oz]) => ox === move[0] && oy === move[1] && oz === move[2]
+    );
+    
+    if (isShared) {
+      sharedMoves.push(move);
+    } else {
+      exclusiveMovesList.push(move);
+    }
+  }
+  
+  if (sharedMoves.length === 0 || exclusiveMovesList.length === 0) {
+    return myMoves;
+  }
+  
+  const safeMoves = [];
+  
+  for (const sharedMove of sharedMoves) {
+    const [sx, sy, sz] = sharedMove;
+    
+    const afterSharedBoard = copyBoard(boardState);
+    simulateMove(afterSharedBoard, sx, sy, sz, player);
+    
+    let isSafe = true;
+    
+    for (const [ex, ey, ez] of exclusiveMovesList) {
+      if (isLegalMove(afterSharedBoard, ex, ey, ez, opponent)) {
+        isSafe = false;
+        break;
+      }
+      
+      const oppMoves = generateLegalMovesOn(afterSharedBoard, opponent);
+      for (const oppMove of oppMoves) {
+        const afterOppBoard = copyBoard(afterSharedBoard);
+        simulateMove(afterOppBoard, oppMove[0], oppMove[1], oppMove[2], opponent);
+        
+        if (!isLegalMove(afterOppBoard, ex, ey, ez, player)) {
+          isSafe = false;
+          break;
+        }
+      }
+      
+      if (!isSafe) break;
+    }
+    
+    if (isSafe) {
+      safeMoves.push(sharedMove);
+    }
+  }
+  
+  if (safeMoves.length > 0) {
+    console.log(`✅ 専用マスルール適用: ${safeMoves.length}個の安全な共有マスを優先`);
+    return safeMoves;
+  }
+  
+  console.log(`⚠️ 専用マスルール: 安全な共有マスなし → 元の候補を使用`);
+  return myMoves;
+}
+
+
+function isFaceThirdException(boardState, x, y, z, player) {
+  if (!isFace(x, y, z)) return false;
+  
+  const opponent = player === 'black' ? 'white' : 'black';
+  
+  for (let faceIdx = 0; faceIdx < 6; faceIdx++) {
+    const fixedAxis = Math.floor(faceIdx / 2);
+    const fixedValue = (faceIdx % 2 === 0) ? 0 : 3;
+    
+    let belongsToFace = false;
+    if (fixedAxis === 0 && x === fixedValue) belongsToFace = true;
+    if (fixedAxis === 1 && y === fixedValue) belongsToFace = true;
+    if (fixedAxis === 2 && z === fixedValue) belongsToFace = true;
+    
+    if (!belongsToFace) continue;
+    
+    const facePositions = [];
+    for (let i = 1; i <= 2; i++) {
+      for (let j = 1; j <= 2; j++) {
+        let px, py, pz;
+        if (fixedAxis === 0) { px = fixedValue; py = i; pz = j; }
+        else if (fixedAxis === 1) { px = i; py = fixedValue; pz = j; }
+        else { px = i; py = j; pz = fixedValue; }
+        
+        facePositions.push([px, py, pz]);
+      }
+    }
+    
+    let filledCount = 0;
+    let lastEmptyPos = null;
+    
+    for (const [px, py, pz] of facePositions) {
+      if (boardState[px][py][pz] !== null) {
+        filledCount++;
+      } else if (px === x && py === y && pz === z) {
+        filledCount++;
+      } else {
+        lastEmptyPos = [px, py, pz];
+      }
+    }
+    
+    if (filledCount !== 3 || !lastEmptyPos) continue;
+    
+    const [lx, ly, lz] = lastEmptyPos;
+    
+    const afterMyMove = copyBoard(boardState);
+    simulateMove(afterMyMove, x, y, z, player);
+    
+    if (isLegalMove(afterMyMove, lx, ly, lz, opponent)) {
+      continue;
+    }
+    
+    const opponentMoves = generateLegalMovesOn(afterMyMove, opponent);
+    
+    if (opponentMoves.length === 0) {
+      if (isLegalMove(afterMyMove, lx, ly, lz, player)) {
+        return true;
+      }
+      continue;
+    }
+    
+    let allPathsValid = true;
+    
+    for (const oppMove of opponentMoves) {
+      const afterOppBoard = copyBoard(afterMyMove);
+      simulateMove(afterOppBoard, oppMove[0], oppMove[1], oppMove[2], opponent);
+      
+      if (!isLegalMove(afterOppBoard, lx, ly, lz, player)) {
+        allPathsValid = false;
+        break;
+      }
+    }
+    
+    if (allPathsValid) {
+      return true;
+    }
+  }
+  
+  return false;
+}
+
+/**
+ * Face 3つ目禁止判定（例外ルール統合版）
+ */
+function isForbiddenThirdFaceV3(boardState, x, y, z, player) {
+  if (!isForbiddenThirdFaceV2(boardState, x, y, z)) {
+    return false;
+  }
+  
+  if (isFaceThirdException(boardState, x, y, z, player)) {
+    console.log(`✅ Face 3つ目例外許可: [${x},${y},${z}]`);
+    return false;
+  }
+  
+  return true;
+}
+
+
+
+
+
 // Face 1つ目または2つ目判定
 function isFaceFirstOrSecond(boardState, x, y, z) {
   if (!isFace(x, y, z)) return false;
@@ -1212,53 +1582,60 @@ function selectMoveCustom(boardState, player) {
     }
   }
 
-  // 1. 空きマス10以下 → 完全読み切り
+  // 1. 空きマス10以下 → 完全読み切り（新ルール無効化）
   if (emptyCount <= 10) {
+    console.log('🔍 完全読み切りモード（新ルール無効化）');
     const move = completeSearch(boardState, player);
     if (move) return move;
   }
 
-  // 2. 面の3つ目禁止で除外
-  const originalLegalMoves = [...legalMoves]; // ★ バックアップ
-  legalMoves = legalMoves.filter(([x, y, z]) => !isForbiddenThirdFaceV2(boardState, x, y, z));
+  // 2. Face の3つ目禁止（例外ルール統合版）
+  const originalLegalMoves = [...legalMoves];
+  legalMoves = legalMoves.filter(([x, y, z]) => 
+    !isForbiddenThirdFaceV3(boardState, x, y, z, player)
+  );
   
-  // ★ 全て除外された場合は元に戻す
   if (legalMoves.length === 0) {
-    console.warn('⚠️ 面の3つ目除外で全滅 → 元の合法手を使用');
+    console.warn('⚠️ Face 3つ目除外で全滅 → 元の合法手を使用');
     legalMoves = originalLegalMoves;
   }
 
   // 3. 禁止Edgeパターンを絶対除外
-  const nonForbiddenMoves = legalMoves.filter(move => !isForbiddenEdge(boardState, move, player));
+  const nonForbiddenMoves = legalMoves.filter(move => 
+    !isForbiddenEdge(boardState, move, player)
+  );
   const workingMoves = nonForbiddenMoves.length > 0 ? nonForbiddenMoves : legalMoves;
 
-  // 4. Corner最優先（厳密な優先度順）
+  // 4. Corner最優先（厳密な優先度順 + 専用マスルール）
   const bestCorner = findBestCorner(boardState, workingMoves, player);
   if (bestCorner) return bestCorner;
 
-  // 5. Edge安全（相手にCornerを与えない、厳密な優先度順）
+  // 5. Edge安全（相手にCornerを与えない + 専用マスルール）
   const bestSafeEdge = findBestSafeEdge(boardState, workingMoves, player);
   if (bestSafeEdge) return bestSafeEdge;
 
-  // 6. Face安全（相手にCornerを与えない）
+  // 6. Face安全（相手にCornerを与えない + 専用マスルール）
   const bestSafeFace = findBestSafeFace(boardState, workingMoves, player);
   if (bestSafeFace) return bestSafeFace;
 
-  // 7. Face危険（相手にCornerを与える）
+  // 7. Face危険（相手にCornerを与える + 専用マスルール）
   const bestDangerousFace = findBestDangerousFace(boardState, workingMoves, player);
   if (bestDangerousFace) return bestDangerousFace;
 
-  // 8. Edge危険（相手にCornerを与える）
+  // 8. Edge危険（相手にCornerを与える + 専用マスルール）
   const bestDangerousEdge = findBestDangerousEdge(boardState, workingMoves, player);
   if (bestDangerousEdge) return bestDangerousEdge;
 
-  // 9. その他（Core）
+  // 9. その他（Core + 専用マスルール）
   const otherMoves = workingMoves.filter(([x, y, z]) => 
     !isCornerPosition(x, y, z) && !isEdgePosition(x, y, z) && !isFace(x, y, z)
   );
   
   if (otherMoves.length > 0) {
-    const scored = otherMoves.map(move => ({
+    // 専用マスルール適用
+    const filteredOther = filterByExclusiveRule(boardState, player, otherMoves);
+    
+    const scored = filteredOther.map(move => ({
       move,
       occupancy: getSurroundingOccupancy(boardState, move[0], move[1], move[2], player)
     }));
@@ -1269,6 +1646,8 @@ function selectMoveCustom(boardState, player) {
   return workingMoves[0];
 }
 
+
+
 // ========================================
 // Corner選択（厳密な優先順位）
 // ========================================
@@ -1277,30 +1656,46 @@ function findBestCorner(boardState, moves, player) {
   if (cornerMoves.length === 0) return null;
 
   for (const targetPattern of CORNER_EDGE_PATTERNS) {
+    const matchingCorners = [];
+    
     for (const move of cornerMoves) {
       const pattern = getEdgePattern(boardState, move, player);
       if (!pattern) continue;
       
       if (matchesPattern(pattern, targetPattern)) {
         if (!opensCornerForOpponent(boardState, move[0], move[1], move[2], player)) {
-          return move;
+          matchingCorners.push(move);
         }
       }
+    }
+    
+    if (matchingCorners.length > 0) {
+      // 専用マスルール適用
+      const filtered = filterByExclusiveRule(boardState, player, matchingCorners);
+      return filtered[0];
     }
   }
 
   for (const targetPattern of CORNER_EDGE_PATTERNS) {
+    const matchingCorners = [];
+    
     for (const move of cornerMoves) {
       const pattern = getEdgePattern(boardState, move, player);
       if (!pattern) continue;
       
       if (matchesPattern(pattern, targetPattern)) {
-        return move;
+        matchingCorners.push(move);
       }
+    }
+    
+    if (matchingCorners.length > 0) {
+      const filtered = filterByExclusiveRule(boardState, player, matchingCorners);
+      return filtered[0];
     }
   }
 
-  return cornerMoves[0];
+  const filtered = filterByExclusiveRule(boardState, player, cornerMoves);
+  return filtered[0];
 }
 
 // ========================================
@@ -1313,17 +1708,25 @@ function findBestSafeEdge(boardState, moves, player) {
   if (safeEdges.length === 0) return null;
 
   for (const targetPattern of EDGE_PATTERNS_HIGH) {
+    const matchingEdges = [];
+    
     for (const move of safeEdges) {
       const pattern = getEdgePattern(boardState, move, player);
       if (!pattern) continue;
       
       if (matchesPattern(pattern, targetPattern)) {
-        return move;
+        matchingEdges.push(move);
       }
+    }
+    
+    if (matchingEdges.length > 0) {
+      const filtered = filterByExclusiveRule(boardState, player, matchingEdges);
+      return filtered[0];
     }
   }
 
-  return safeEdges[0];
+  const filtered = filterByExclusiveRule(boardState, player, safeEdges);
+  return filtered[0];
 }
 
 // ========================================
@@ -1335,15 +1738,21 @@ function findBestSafeFace(boardState, moves, player) {
   
   if (safeFaces.length === 0) return null;
 
-  for (const move of safeFaces) {
-    if (isFaceCompletion4thV2(boardState, move[0], move[1], move[2])) {
-      return move;
-    }
+  // 4つ目優先
+  const completion4th = safeFaces.filter(([x, y, z]) => 
+    isFaceCompletion4thV2(boardState, x, y, z)
+  );
+  if (completion4th.length > 0) {
+    const filtered = filterByExclusiveRule(boardState, player, completion4th);
+    return filtered[0];
   }
 
+  // 1つ目または2つ目優先
   const firstOrSecond = safeFaces.filter(([x, y, z]) => isFaceFirstOrSecond(boardState, x, y, z));
   if (firstOrSecond.length > 0) {
-    const scored = firstOrSecond.map(move => ({
+    const filtered = filterByExclusiveRule(boardState, player, firstOrSecond);
+    
+    const scored = filtered.map(move => ({
       move,
       occupancy: getSurroundingOccupancy(boardState, move[0], move[1], move[2], player)
     }));
@@ -1351,7 +1760,9 @@ function findBestSafeFace(boardState, moves, player) {
     return scored[0].move;
   }
 
-  const scored = safeFaces.map(move => ({
+  const filtered = filterByExclusiveRule(boardState, player, safeFaces);
+  
+  const scored = filtered.map(move => ({
     move,
     occupancy: getSurroundingOccupancy(boardState, move[0], move[1], move[2], player)
   }));
@@ -1360,14 +1771,16 @@ function findBestSafeFace(boardState, moves, player) {
 }
 
 // ========================================
-// Face危険選択
+// Face危険選択（専用マスルール統合版）
 // ========================================
 function findBestDangerousFace(boardState, moves, player) {
   const faceMoves = moves.filter(([x, y, z]) => isFace(x, y, z));
   
   if (faceMoves.length === 0) return null;
 
-  const scored = faceMoves.map(move => ({
+  const filtered = filterByExclusiveRule(boardState, player, faceMoves);
+  
+  const scored = filtered.map(move => ({
     move,
     occupancy: getSurroundingOccupancy(boardState, move[0], move[1], move[2], player)
   }));
@@ -1376,7 +1789,7 @@ function findBestDangerousFace(boardState, moves, player) {
 }
 
 // ========================================
-// Edge危険選択
+// Edge危険選択（専用マスルール統合版）
 // ========================================
 function findBestDangerousEdge(boardState, moves, player) {
   const edgeMoves = moves.filter(([x, y, z]) => isEdgePosition(x, y, z));
@@ -1384,35 +1797,56 @@ function findBestDangerousEdge(boardState, moves, player) {
   if (edgeMoves.length === 0) return null;
 
   for (const targetPattern of EDGE_PATTERNS_HIGH) {
+    const matchingEdges = [];
+    
     for (const move of edgeMoves) {
       const pattern = getEdgePattern(boardState, move, player);
       if (!pattern) continue;
       
       if (matchesPattern(pattern, targetPattern)) {
-        return move;
+        matchingEdges.push(move);
       }
+    }
+    
+    if (matchingEdges.length > 0) {
+      const filtered = filterByExclusiveRule(boardState, player, matchingEdges);
+      return filtered[0];
     }
   }
 
-  return edgeMoves[0];
+  const filtered = filterByExclusiveRule(boardState, player, edgeMoves);
+  return filtered[0];
 }
+
 
 // ========================================
 // 禁止Edge判定
 // ========================================
 function isForbiddenEdge(boardState, move, player) {
   const [x, y, z] = move;
-  if (!isEdgePosition(x, y, z)) return false;
+  
+  if (!isEdgePosition(x, y, z)) {
+    console.log(`⚪ [${x},${y},${z}] はEdgeではない`);
+    return false;
+  }
   
   const pattern = getEdgePattern(boardState, move, player);
-  if (!pattern) return false;
+  console.log(`🔍 [${x},${y},${z}] のパターン: "${pattern}"`);
+  
+  if (!pattern) {
+    console.log(`⚠️ [${x},${y},${z}] パターン取得失敗`);
+    return false;
+  }
   
   for (const forbiddenPattern of EDGE_PATTERNS_FORBIDDEN) {
-    if (matchesPattern(pattern, forbiddenPattern)) {
+    const matches = matchesPattern(pattern, forbiddenPattern);
+    if (matches) {
+      console.log(`🚫 禁止Edge検出: [${x},${y},${z}] パターン="${pattern}" 禁止="${forbiddenPattern}"`);
       return true;
     }
   }
   
+  console.log(`✅ [${x},${y},${z}] パターン="${pattern}" は禁止されていない`);
   return false;
 }
 
@@ -1523,6 +1957,9 @@ function canDeferToMove(boardState, highPriorityMove, lowPriorityMove, player) {
   return true;
 }
 
+
+
+
 function handleAITurn() {
   if (currentTurn !== aiColor) return;
 
@@ -1597,4 +2034,3 @@ function handleAITurn() {
     checkGameEnd();
   }, 500);
 }
-
