@@ -677,3 +677,4 @@ function showAILoadingIndicator(){
 function hideAILoadingIndicator(){
   const d=document.getElementById('ai-loading-indicator'); if(d) d.remove();
 }
+
