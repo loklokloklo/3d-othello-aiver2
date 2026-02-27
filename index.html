@@ -1,38 +1,6 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <script type="module">
-    // Import the functions you need from the SDKs you need
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
-    // TODO: Add SDKs for Firebase products that you want to use
-    // https://firebase.google.com/docs/web/setup#available-libraries
-  
-    // Your web app's Firebase configuration
-    const firebaseConfig = {
-      apiKey: "AIzaSyDXmNcJm-NMieg5ANasgDyKSmYVeNQD1MU",
-      authDomain: "kihumohou.firebaseapp.com",
-      projectId: "kihumohou",
-      storageBucket: "kihumohou.firebasestorage.app",
-      messagingSenderId: "780352767162",
-      appId: "1:780352767162:web:69194592a43ac60c59ee83"
-    };
-  
-    // Initialize Firebase
-    const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
-
-  // グローバルに使えるように
-  window.db = db;
-  window.addKifu = async function (kifuData) {
-    try {
-      await addDoc(collection(db, "kifu"), kifuData);
-      alert("棋譜を保存しました");
-    } catch (e) {
-      console.error("棋譜保存エラー: ", e);
-    }
-  };
-  </script>
-
   <meta charset="UTF-8" />
   <title>4x4x4 オセロ</title>
   <style>
@@ -79,7 +47,6 @@
       background-color: white;
     }
 
-    /* ラベル表示用のCSS */
     .label {
       color: white;
       font-size: 16px;
@@ -90,7 +57,6 @@
       pointer-events: none;
     }
 
-    /* 1手戻すボタン */
     #undo-button {
       padding: 8px 16px;
       background: #e05555;
@@ -104,20 +70,92 @@
       transition: background 0.15s, transform 0.1s;
       white-space: nowrap;
     }
+    #undo-button:hover { background: #c43a3a; }
+    #undo-button:active { transform: scale(0.95); }
+    #undo-button:disabled { background: #aaa; cursor: not-allowed; box-shadow: none; }
 
-    #undo-button:hover {
-      background: #c43a3a;
+    /* AI選択ポップアップ */
+    #ai-select-popup {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0,0,0,0.75);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 10001;
     }
-
-    #undo-button:active {
-      transform: scale(0.95);
+    #ai-select-content {
+      background: white;
+      padding: 2rem 2.5rem;
+      border-radius: 1rem;
+      width: 90%;
+      max-width: 560px;
+      text-align: center;
     }
-
-    #undo-button:disabled {
-      background: #aaa;
-      cursor: not-allowed;
-      box-shadow: none;
+    #ai-select-content h2 {
+      font-size: 1.4rem;
+      margin-bottom: 1.2rem;
     }
+    .ai-card-row {
+      display: flex;
+      gap: 16px;
+      justify-content: center;
+      margin-bottom: 1.2rem;
+    }
+    .ai-card {
+      flex: 1;
+      border: 2px solid #ccc;
+      border-radius: 12px;
+      padding: 1.2rem 1rem;
+      cursor: pointer;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      background: #fafafa;
+    }
+    .ai-card:hover {
+      border-color: #4caf50;
+      box-shadow: 0 0 0 3px rgba(76,175,80,0.2);
+    }
+    .ai-card h3 {
+      font-size: 1.2rem;
+      margin: 0 0 0.5rem 0;
+    }
+    .ai-card .ai-desc {
+      font-size: 0.85rem;
+      color: #555;
+      margin-bottom: 0.8rem;
+    }
+    .ai-card .ai-time {
+      font-size: 0.9rem;
+      font-weight: bold;
+      color: #333;
+      margin-bottom: 0.6rem;
+    }
+    .ai-card .ai-stats {
+      font-size: 0.82rem;
+      color: #444;
+      line-height: 1.6;
+    }
+    .ai-card .ai-stats .loading {
+      color: #aaa;
+      font-style: italic;
+    }
+    .ai-select-btn {
+      display: block;
+      width: 100%;
+      margin-top: 1rem;
+      padding: 0.6rem 0;
+      font-size: 1rem;
+      font-weight: bold;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      color: white;
+    }
+    .ai-select-btn.sakkuri { background: #2196f3; }
+    .ai-select-btn.sakkuri:hover { background: #1976d2; }
+    .ai-select-btn.jikkuri { background: #9c27b0; }
+    .ai-select-btn.jikkuri:hover { background: #7b1fa2; }
   </style>
 </head>
 <body>
@@ -143,9 +181,7 @@
     min-width: 220px;
     text-align: center;
     box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
-  ">
-    黒: 0 ／ 白: 0
-  </div>
+  ">黒: 0 ／ 白: 0</div>
   <button id="undo-button" style="
     padding: 15px 18px;
     background: #e05555;
@@ -161,66 +197,65 @@
   ">↩ 1手戻す</button>
 </div>
 
- <!-- 手番選択UI -->
-  <div id="turn-selection">
-    <h2>手番を選んでください</h2>
-    <button id="black-button">先手（黒）</button>
-    <button id="white-button">後手（白）</button>
-  </div>
+<!-- 手番選択UI（AI選択後に表示） -->
+<div id="turn-selection" style="display:none;">
+  <h2>手番を選んでください</h2>
+  <button id="black-button">先手（黒）</button>
+  <button id="white-button">後手（白）</button>
+</div>
 
-  <!-- パス用ポップアップ -->
+<!-- パス用ポップアップ -->
 <div id="pass-popup" style="
-display: none;
-position: absolute;
-top: 0; left: 0;
-width: 100%; height: 100%;
-background: rgba(200,200,200,0.8);
-z-index: 99;
-display: flex;
-justify-content: center;
-align-items: center;
+  display: none;
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  background: rgba(200,200,200,0.8);
+  z-index: 99;
+  justify-content: center;
+  align-items: center;
 ">
-<div style="
-  background: white;
-  padding: 30px;
-  border-radius: 12px;
-  box-shadow: 0 0 10px rgba(0,0,0,0.3);
-  text-align: center;
-">
-  <p>置ける場所がありません。AIのターンになります。</p>
-  <div style="display: flex; justify-content: center; gap: 12px; margin-top: 10px;">
-    <button id="pass-ok-button">OK</button>
-    <button id="pass-undo-button" style="
-      background: #e05555;
-      color: white;
-      border: none;
-      border-radius: 6px;
-      padding: 4px 14px;
-      font-size: 14px;
-      font-weight: bold;
-      cursor: pointer;
-    ">↩ 1手戻す</button>
+  <div style="
+    background: white;
+    padding: 30px;
+    border-radius: 12px;
+    box-shadow: 0 0 10px rgba(0,0,0,0.3);
+    text-align: center;
+  ">
+    <p>置ける場所がありません。AIのターンになります。</p>
+    <div style="display: flex; justify-content: center; gap: 12px; margin-top: 10px;">
+      <button id="pass-ok-button">OK</button>
+      <button id="pass-undo-button" style="
+        background: #e05555;
+        color: white;
+        border: none;
+        border-radius: 6px;
+        padding: 4px 14px;
+        font-size: 14px;
+        font-weight: bold;
+        cursor: pointer;
+      ">↩ 1手戻す</button>
+    </div>
   </div>
 </div>
-</div>
 
-
- <!-- ゲーム結果後のUI -->
+<!-- ゲーム結果後のUI -->
 <div id="game-end-ui" style="display: none; position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 30px 40px; border-radius: 15px; text-align: center; z-index: 10; min-width: 300px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);">
   <p id="game-result-text" style="font-size: 24px; font-weight: bold; margin-bottom: 20px;"></p>
   <button id="send-kifu-btn" style="font-size: 18px; padding: 10px 20px; border-radius: 8px; margin: 5px;">棋譜を送信</button>
   <button id="new-game-btn" style="font-size: 18px; padding: 10px 20px; border-radius: 8px; margin: 5px;">新しいゲーム</button>
 </div>
 
-
-<!-- 同意ポップアップ -->
-<div id="consentPopup" class="popup-overlay" style="
+<!-- ========================================
+     同意 → AI選択 ポップアップ
+======================================== -->
+<div id="consentPopup" style="
   position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-  background: rgba(0, 0, 0, 0.7);
+  background: rgba(0,0,0,0.7);
   display: flex; justify-content: center; align-items: center;
   z-index: 10000;
 ">
-  <div class="popup-content" style="
+  <div style="
     background: white;
     padding: 2rem;
     border-radius: 1rem;
@@ -232,47 +267,190 @@ align-items: center;
     font-size: 1rem;
     line-height: 1.5;
   ">
-      <p>このゲームは、AIとの対戦専用の3Dオセロです。:(</p><br>
-<p>AIが置けるのに置かないバグを修正　2026.02.08.11:00</p>
-   
-<p>AIに後回しの考えと占有の概念を追加　2026.02.09.16:00</p>
+    <!--
+    <p>このゲームは、AIとの対戦専用の3Dオセロです。</p><br>
+    <p>AIが置けるのに置かないバグを修正　2026.02.08.11:00</p>
+    <p>AIに後回しの考えと占有の概念を追加　2026.02.09.16:00</p>
+    <p>AIの認識と現AIのバグをほぼ修正　2026.02.10.17:00</p>
+    <p>aiが後手でプレイヤーの引き分けを記録　2026.02.12.12:00</p>
+    <p>ai同士では先手の勝ちを記録　2026.02.12.16:00</p>
+    -->
 
-<p>AIの認識と現AIのバグをほぼ修正　2026.02.10.17:00</p>
-
-<p>aiが後手でプレイヤーの引き分けを記録　2026.02.12.12:00</p>
-
-<p>ai同士では先手の勝ちを記録　2026.02.12.16:00</p>
-
-<p><strong>1手戻す機能</strong>を追加　2026.02.12.17:00</p>
-
-<p>aiを変更。置石のラグあり。　2026.02.26.18:00</p>
-
+    <p><strong>1手戻す機能</strong>を追加　2026.02.12.17:00</p>
+    <p><strong>AIの選択</strong>が可能に　2026.02.27.17:00</p>
     <button id="consentButton" style="margin-top: 1.5rem; padding: 0.5rem 1.5rem; font-size: 1rem; border: none; background-color: #4caf50; color: white; border-radius: 0.5rem; cursor: pointer;">
       了承する
     </button>
   </div>
 </div>
 
+<!-- AI選択ポップアップ -->
+<div id="ai-select-popup" style="display:none;">
+  <div id="ai-select-content">
+    <h2>対戦するAIを選んでください</h2>
+    <div class="ai-card-row">
+
+      <!-- さっくりAI -->
+      <div class="ai-card">
+        <h3>⚡ さっくりAI</h3>
+        <div class="ai-desc">パターンベースの軽量AI。<br>すばやく応答します。</div>
+        <div class="ai-time">平均応答時間: 約0.5秒</div>
+        <div class="ai-stats" id="stats-sakkuri">
+          <span class="loading">勝率を読み込み中...</span>
+        </div>
+        <button class="ai-select-btn sakkuri" id="btn-sakkuri">このAIで遊ぶ</button>
+      </div>
+
+      <!-- じっくりAI -->
+      <div class="ai-card">
+        <h3>🧠 じっくりAI</h3>
+        <div class="ai-desc">αβ探索+Ponderingの<br>強力なAI。応答は遅め。</div>
+        <div class="ai-time">平均応答時間: 約5〜60秒</div>
+        <div class="ai-stats" id="stats-jikkuri">
+          <span class="loading">勝率を読み込み中...</span>
+        </div>
+        <button class="ai-select-btn jikkuri" id="btn-jikkuri">このAIで遊ぶ</button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
 <script>
-  window.addEventListener('DOMContentLoaded', () => {
-    const popup = document.getElementById('consentPopup');
-    const button = document.getElementById('consentButton');
-    const turnUI = document.getElementById('turn-selection');
+// ========================================
+// Firebase Realtime Database から勝率を取得
+// ========================================
+const FIREBASE_URL = 'https://kihumohou-default-rtdb.firebaseio.com/kifu.json';
 
-    if (turnUI) turnUI.style.display = 'none';
+async function fetchWinRates() {
+  try {
+    const res = await fetch(FIREBASE_URL);
+    const raw = await res.json();
+    if (!raw) return { sakkuri: null, jikkuri: null };
 
-    button.addEventListener('click', () => {
-      popup.style.display = 'none';
-      if (turnUI) turnUI.style.display = 'block';
-      init(); // 同意後にゲーム初期化開始
+    const records = Object.values(raw);
+
+    // さっくり: aiTypeなし or aiType==='sakkuri'
+    const sakkuri = records.filter(r => !r.aiType || r.aiType === 'sakkuri');
+    // じっくり: aiType==='jikkuri'
+    const jikkuri = records.filter(r => r.aiType === 'jikkuri');
+
+    function calcRates(recs) {
+      // AIが先手 = firstPlayer が 'white'（プレイヤーが黒=後手）
+      // → AIは black
+      // AIが後手 = firstPlayer が 'black'（プレイヤーが黒=先手）
+      // → AIは white
+      // ただしここでは「firstPlayer」はプレイヤーが選んだ色
+      // firstPlayer='black' → プレイヤーが先手(黒) → AIはwhite → AIが後手
+      // firstPlayer='white' → プレイヤーが後手(白) → AIはblack → AIが先手
+
+      // AIが先手のゲーム（プレイヤーが後手=white選択）
+      const aiFirst = recs.filter(r => r.first === 'white');
+      const aiFirstWin = aiFirst.filter(r => r.result === 'black').length; // AI=blackが勝ち
+
+      // AIが後手のゲーム（プレイヤーが先手=black選択）
+      const aiSecond = recs.filter(r => r.first === 'black');
+      const aiSecondWin = aiSecond.filter(r => r.result === 'white').length; // AI=whiteが勝ち
+
+      return {
+        firstTotal: aiFirst.length,
+        firstWin: aiFirstWin,
+        secondTotal: aiSecond.length,
+        secondWin: aiSecondWin,
+      };
+    }
+
+    return {
+      sakkuri: calcRates(sakkuri),
+      jikkuri: calcRates(jikkuri),
+    };
+  } catch (e) {
+    console.warn('勝率取得失敗:', e);
+    return { sakkuri: null, jikkuri: null };
+  }
+}
+
+function renderStats(elementId, stats) {
+  const el = document.getElementById(elementId);
+  if (!el) return;
+  if (!stats) {
+    el.innerHTML = '<span style="color:#aaa;font-style:italic;">取得失敗</span>';
+    return;
+  }
+
+  function pct(win, total) {
+    if (total === 0) return 'データなし';
+    return `${Math.round(win / total * 100)}% (${win}勝/${total}戦)`;
+  }
+
+  el.innerHTML = `
+    <div>AI先手勝率: <strong>${pct(stats.firstWin, stats.firstTotal)}</strong></div>
+    <div>AI後手勝率: <strong>${pct(stats.secondWin, stats.secondTotal)}</strong></div>
+  `;
+}
+
+// ========================================
+// ポップアップ制御
+// ========================================
+window.addEventListener('DOMContentLoaded', () => {
+  const consentPopup  = document.getElementById('consentPopup');
+  const consentBtn    = document.getElementById('consentButton');
+  const aiSelectPopup = document.getElementById('ai-select-popup');
+  const turnUI        = document.getElementById('turn-selection');
+
+  // 手番選択UIは最初は非表示
+  if (turnUI) turnUI.style.display = 'none';
+
+  // 了承ボタン → AI選択ポップアップへ
+  consentBtn.addEventListener('click', () => {
+    consentPopup.style.display = 'none';
+    aiSelectPopup.style.display = 'flex';
+
+    // Firebaseから勝率を非同期取得
+    fetchWinRates().then(({ sakkuri, jikkuri }) => {
+      renderStats('stats-sakkuri', sakkuri);
+      renderStats('stats-jikkuri', jikkuri);
     });
   });
+
+  // さっくりAIを選択
+  document.getElementById('btn-sakkuri').addEventListener('click', () => {
+    aiSelectPopup.style.display = 'none';
+    loadAIScript('./e_main.js', () => {
+      if (turnUI) turnUI.style.display = 'block';
+    });
+  });
+
+  // じっくりAIを選択
+  document.getElementById('btn-jikkuri').addEventListener('click', () => {
+    aiSelectPopup.style.display = 'none';
+    loadAIScript('./e_evaplus.js', () => {
+      if (turnUI) turnUI.style.display = 'block';
+    });
+  });
+});
+
+// 選択したAIのscriptを動的に読み込む
+function loadAIScript(src, callback) {
+  const script = document.createElement('script');
+  script.type = 'module';
+  script.src = src;
+  script.onload = () => {
+    // モジュール読み込み後にinit()を呼ぶ
+    // モジュール内でwindow.initに関数が登録されている
+    setTimeout(() => {
+      document.dispatchEvent(new Event('DOMContentLoaded'));
+      if (typeof window.init === 'function') {
+        window.init();
+      }
+      if (callback) callback();
+    }, 100);
+  };
+  document.body.appendChild(script);
+}
 </script>
 
-  <!-- JavaScript本体 -->
-  <script type="module" src="./main.js"></script>
-
+<!-- JavaScript本体はAI選択後に動的ロード -->
 
 </body>
 </html>
-
