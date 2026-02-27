@@ -213,7 +213,7 @@ function sortMoves(b,moves,player) {
 // ========================================
 // αβ探索（中断フラグ付き）
 // ========================================
-const AB_DEPTH = 6;
+const AB_DEPTH = 6; //探索の深度。必ず偶数。
 let shouldStop = false;
 
 function alphaBeta(b, cur, root, depth, alpha, beta, hash) {
@@ -284,7 +284,7 @@ function selectMove(b, player, depth=AB_DEPTH) {
   let empty=0;
   for(let x=0;x<4;x++) for(let y=0;y<4;y++) for(let z=0;z<4;z++) if(b[x][y][z]===null) empty++;
 
-  const isEndgame = empty<=12;
+  const isEndgame = empty<=16; //dfpnの探索開始。偶奇は問わない。
   const searchDepth = isEndgame ? 50 : depth;
 
   if(isEndgame){
