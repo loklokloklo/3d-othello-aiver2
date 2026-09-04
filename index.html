@@ -156,6 +156,26 @@
     .ai-select-btn.sakkuri:hover { background: #1976d2; }
     .ai-select-btn.jikkuri { background: #9c27b0; }
     .ai-select-btn.jikkuri:hover { background: #7b1fa2; }
+    .ai-select-btn.custom { background: #ff9800; }
+    .ai-select-btn.custom:hover { background: #e68900; }
+    .ai-card-row { flex-wrap: wrap; }
+    .ai-card { flex-basis: 150px; }
+    .custom-time-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      font-size: 0.85rem;
+      margin-bottom: 0.8rem;
+    }
+    .custom-time-row input {
+      width: 56px;
+      padding: 3px 6px;
+      font-size: 0.9rem;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      text-align: center;
+    }
   </style>
 </head>
 <body>
@@ -312,6 +332,20 @@
         <button class="ai-select-btn jikkuri" id="btn-jikkuri">このAIで遊ぶ</button>
       </div>
 
+      <!-- カスタムAI -->
+      <div class="ai-card">
+        <h3>🎯 カスタムAI</h3>
+        <div class="ai-desc">位置価値+モビリティ評価の<br>反復深化探索。時間を指定可能。<br> 約2秒で7手、約6秒で8手、約25秒で9手先まで探索　</div>
+        <div class="custom-time-row">
+          思考時間(秒):
+          <input type="number" id="custom-think-time" min="1" max="120" step="1" value="8">
+        </div>
+        <div class="ai-stats" id="stats-custom">
+          <span class="loading">勝率を読み込み中...</span>
+        </div>
+        <button class="ai-select-btn custom" id="btn-custom">このAIで遊ぶ</button>
+      </div>
+
     </div>
   </div>
 </div>
@@ -326,7 +360,7 @@ async function fetchWinRates() {
   try {
     const res = await fetch(FIREBASE_URL);
     const raw = await res.json();
-    if (!raw) return { sakkuri: null, jikkuri: null };
+    if (!raw) return { sakkuri: null, jikkuri: null, custom: null };
 
     const records = Object.values(raw);
 
@@ -334,6 +368,8 @@ async function fetchWinRates() {
     const sakkuri = records.filter(r => !r.aiType || r.aiType === 'sakkuri');
     // じっくり: aiType==='jikkuri'
     const jikkuri = records.filter(r => r.aiType === 'jikkuri');
+    // カスタム: aiType==='custom'
+    const custom = records.filter(r => r.aiType === 'custom');
 
     function calcRates(recs) {
       // AIが先手 = firstPlayer が 'white'（プレイヤーが黒=後手）
@@ -363,10 +399,11 @@ async function fetchWinRates() {
     return {
       sakkuri: calcRates(sakkuri),
       jikkuri: calcRates(jikkuri),
+      custom: calcRates(custom),
     };
   } catch (e) {
     console.warn('勝率取得失敗:', e);
-    return { sakkuri: null, jikkuri: null };
+    return { sakkuri: null, jikkuri: null, custom: null };
   }
 }
 
@@ -407,9 +444,10 @@ window.addEventListener('DOMContentLoaded', () => {
     aiSelectPopup.style.display = 'flex';
 
     // Firebaseから勝率を非同期取得
-    fetchWinRates().then(({ sakkuri, jikkuri }) => {
+    fetchWinRates().then(({ sakkuri, jikkuri, custom }) => {
       renderStats('stats-sakkuri', sakkuri);
       renderStats('stats-jikkuri', jikkuri);
+      renderStats('stats-custom', custom);
     });
   });
 
@@ -425,6 +463,20 @@ window.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-jikkuri').addEventListener('click', () => {
     aiSelectPopup.style.display = 'none';
     loadAIScript('./e_evaplus.js', () => {
+      if (turnUI) turnUI.style.display = 'block';
+    });
+  });
+
+  // カスタムAIを選択(思考時間をユーザー入力から取得してから読み込む)
+  document.getElementById('btn-custom').addEventListener('click', () => {
+    const input = document.getElementById('custom-think-time');
+    let sec = parseFloat(input.value);
+    if (isNaN(sec) || sec < 1) sec = 1;
+    if (sec > 120) sec = 120;
+    window.CUSTOM_AI_THINK_MS = Math.round(sec * 1000);
+
+    aiSelectPopup.style.display = 'none';
+    loadAIScript('./e_custom.js', () => {
       if (turnUI) turnUI.style.display = 'block';
     });
   });
